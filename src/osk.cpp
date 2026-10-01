@@ -2,23 +2,25 @@
 
 #include "app.h"
 #include "input.h"
+#include "textfont.h"
 #include "ui.h"
 
 namespace osk {
 
 namespace {
 
-enum Kind : uint8_t { K_CHR, K_BACK, K_ENTER, K_SHIFT, K_LAYER, K_SPACE, K_LEFT, K_RIGHT, K_LINK, K_HIDE, K_GAP };
+enum Kind : uint8_t { K_CHR, K_STR, K_BACK, K_ENTER, K_SHIFT, K_LAYER, K_SPACE, K_LEFT, K_RIGHT, K_LINK, K_HIDE, K_GAP };
 
 struct Key {
   Kind kind;
   char ch;      // character, or target layer for K_LAYER
   float w;      // width in units (each row is 11.5 units wide)
-  const char* label;
+  const char* label;  // for K_STR: the UTF-8 text the key types
 };
 
 #define C(c) {K_CHR, c, 1, nullptr}
-const Key kBottomLetters[] = {{K_LAYER, 1, 1.5, "123"}, {K_LINK, 0, 1.25, "[["}, {K_SPACE, ' ', 4.5, nullptr},
+#define U(s) {K_STR, 0, 1, s}
+const Key kBottomLetters[] = {{K_LAYER, 1, 1.5, "123"}, {K_LAYER, 3, 1.25, "\u00e0\u00e9"}, {K_LINK, 0, 1.25, "[["}, {K_SPACE, ' ', 3.25, nullptr},
                               {K_LEFT, 0, 1.25, nullptr}, {K_RIGHT, 0, 1.25, nullptr}, {K_HIDE, 0, 1.75, nullptr}};
 const Key kBottomSymbols[] = {{K_LAYER, 0, 1.5, "ABC"}, {K_LINK, 0, 1.25, "[["}, {K_SPACE, ' ', 4.5, nullptr},
                               {K_LEFT, 0, 1.25, nullptr}, {K_RIGHT, 0, 1.25, nullptr}, {K_HIDE, 0, 1.75, nullptr}};
@@ -38,15 +40,34 @@ const Key L1R2[] = {{K_GAP, 0, 0.5, nullptr}, C('#'), C('*'), C('-'), C('_'), C(
 const Key L1R3[] = {{K_LAYER, 2, 1.5, "#+="}, C('!'), C(':'), C(';'), C('/'), C('\''), C('`'), C('>'), C('~'), C('='), C('|')};
 // Layer 2: the rest
 const Key L2R1[] = {C('@'), C('&'), C('%'), C('+'), C('\\'), C('{'), C('}'), C('<'), C('$'), C('^'), {K_BACK, 0, 1.5, nullptr}};
-const Key L2R2[] = {{K_GAP, 0, 0.5, nullptr}, C('#'), C('*'), C('-'), C('_'), C('('), C(')'), C('['), C(']'), C('"'), {K_ENTER, 0, 2, nullptr}};
-const Key L2R3[] = {{K_LAYER, 1, 1.5, "123"}, C('!'), C('?'), C(':'), C(';'), C('/'), C('\''), C(','), C('.'), C('='), C('|')};
+const Key L2R2[] = {{K_GAP, 0, 0.5, nullptr}, U("\u20ac"), U("\u00a3"), U("\u00a5"), U("\u00b0"), U("\u2022"), U("\u2026"), U("\u2013"), U("\u2014"), U("\u201c"), {K_ENTER, 0, 2, nullptr}};
+const Key L2R3[] = {{K_LAYER, 1, 1.5, "123"}, U("\u201d"), U("\u00ab"), U("\u00bb"), U("\u2190"), U("\u2192"), U("\u2264"), U("\u2265"), U("\u2260"), U("\u00b1"), U("\u2713")};
+// Layer 3: accented letters (Shift gives capitals)
+const Key L3R1[] = {U("\u00e0"), U("\u00e1"), U("\u00e2"), U("\u00e4"), U("\u00e3"), U("\u00e5"), U("\u00e6"), U("\u00e7"), U("\u00e8"), U("\u00e9"), {K_BACK, 0, 1.5, nullptr}};
+const Key L3R2[] = {{K_GAP, 0, 0.5, nullptr}, U("\u00ea"), U("\u00eb"), U("\u00ec"), U("\u00ed"), U("\u00ee"), U("\u00ef"), U("\u00f1"), U("\u00f2"), U("\u00f3"), {K_ENTER, 0, 2, nullptr}};
+const Key L3R3[] = {{K_SHIFT, 0, 1.5, nullptr}, U("\u00f4"), U("\u00f6"), U("\u00f5"), U("\u00f8"), U("\u0153"), U("\u00f9"), U("\u00fa"), U("\u00fb"), U("\u00fc"), U("\u00df")};
+const Key kBottomAccents[] = {{K_LAYER, 0, 1.5, "ABC"}, {K_LAYER, 1, 1.25, "123"}, {K_LINK, 0, 1.25, "[["}, {K_SPACE, ' ', 3.25, nullptr},
+                              {K_LEFT, 0, 1.25, nullptr}, {K_RIGHT, 0, 1.25, nullptr}, {K_HIDE, 0, 1.75, nullptr}};
 #undef C
+#undef U
 
-const Row kLayers[3][4] = {
-    {{L0R1, 11}, {L0R2, 11}, {L0R3, 11}, {kBottomLetters, 6}},
+const Row kLayers[4][4] = {
+    {{L0R1, 11}, {L0R2, 11}, {L0R3, 11}, {kBottomLetters, 7}},
     {{L1R1, 11}, {L1R2, 11}, {L1R3, 11}, {kBottomSymbols, 6}},
     {{L2R1, 11}, {L2R2, 11}, {L2R3, 11}, {kBottomSymbols, 6}},
+    {{L3R1, 11}, {L3R2, 11}, {L3R3, 11}, {kBottomAccents, 7}},
 };
+
+// Capital form of an accented key's text (Latin-1 a-grave..y-umlaut, oe).
+std::string upper(const char* s) {
+  uint32_t cp;
+  int n = tf::decodeUtf8(s, strlen(s), 0, &cp);
+  if (cp >= 0xE0 && cp <= 0xFE && cp != 0xF7) cp -= 0x20;
+  else if (cp == 0x153) cp = 0x152;
+  else return std::string(s, n);
+  char out[3] = {(char)(0xC0 | (cp >> 6)), (char)(0x80 | (cp & 0x3F)), 0};
+  return out;
+}
 
 constexpr int kRowH = 34, kGap = 4, kPad = 3;
 constexpr int kHeight = kPad + 4 * (kRowH + kGap);
@@ -73,7 +94,7 @@ void drawKey(int r, int c) {
   if (k.kind == K_GAP) return;
   ui::Rect rc = keyRect(r, c);
   const bool pressed = r == pressedRow_ && c == pressedCol_;
-  const bool special = k.kind != K_CHR && k.kind != K_SPACE;
+  const bool special = k.kind != K_CHR && k.kind != K_STR && k.kind != K_SPACE;
   uint16_t bg = pressed ? theme::ACCENT_BG : special ? theme::BG_ALT : theme::BORDER;
   if (k.kind == K_SHIFT && shift_) bg = theme::ACCENT_DIM;
   gfx.fillRoundRect(rc.x, rc.y, rc.w, rc.h, 5, bg);
@@ -89,6 +110,10 @@ void drawKey(int r, int c) {
       gfx.drawString(s, cx, cy - 1);
       break;
     }
+    case K_STR:
+      gfx.setFont(font::h2());
+      gfx.drawString((shift_ ? upper(k.label) : std::string(k.label)).c_str(), cx, cy - 1);
+      break;
     case K_BACK:
       gfx.fillTriangle(cx - 12, cy, cx - 5, cy - 7, cx - 5, cy + 7, fg);
       gfx.fillRect(cx - 5, cy - 7, 16, 15, fg);
@@ -198,6 +223,16 @@ bool onTap(int x, int y) {
       char ch = k.ch;
       if (shift_ && ch >= 'a' && ch <= 'z') ch -= 32;
       send(input::K_CHAR, ch);
+      if (shift_ == 1) {
+        shift_ = 0;
+        draw();
+      }
+      break;
+    }
+    case K_STR: {
+      // Multi-byte UTF-8 goes in as one key event per byte; text fields reassemble it
+      std::string s = shift_ ? upper(k.label) : std::string(k.label);
+      for (char b : s) send(input::K_CHAR, b);
       if (shift_ == 1) {
         shift_ = 0;
         draw();

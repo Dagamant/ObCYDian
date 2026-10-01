@@ -2,6 +2,7 @@
 // Colours, fonts and layout constants (loosely Obsidian's default dark theme).
 
 #include "board.h"
+#include "fonts/fonts.h"
 
 constexpr uint16_t rgb(uint32_t c) {
   return ((c >> 8) & 0xF800) | ((c >> 5) & 0x07E0) | ((c >> 3) & 0x1F);
@@ -32,14 +33,15 @@ constexpr int MARGIN = 12;
 }  // namespace theme
 
 namespace font {
-inline const lgfx::IFont* body() { return &fonts::FreeSans9pt7b; }
-inline const lgfx::IFont* bold() { return &fonts::FreeSansBold9pt7b; }
-inline const lgfx::IFont* italic() { return &fonts::FreeSansOblique9pt7b; }
-inline const lgfx::IFont* boldItalic() { return &fonts::FreeSansBoldOblique9pt7b; }
-inline const lgfx::IFont* mono() { return &fonts::FreeMono9pt7b; }
-inline const lgfx::IFont* h1() { return &fonts::FreeSansBold18pt7b; }
-inline const lgfx::IFont* h2() { return &fonts::FreeSansBold12pt7b; }
-inline const lgfx::IFont* ui() { return &fonts::FreeSans9pt7b; }
-inline const lgfx::IFont* uiBold() { return &fonts::FreeSansBold9pt7b; }
+// Text fonts cover accented Latin, Greek, Cyrillic and common symbols; small() is ASCII only.
+inline const lgfx::IFont* body() { return &ObSans9; }
+inline const lgfx::IFont* bold() { return &ObSansBold9; }
+inline const lgfx::IFont* italic() { return &ObSansOblique9; }
+inline const lgfx::IFont* boldItalic() { return &ObSansBoldOblique9; }
+inline const lgfx::IFont* mono() { return &ObMono9; }
+inline const lgfx::IFont* h1() { return &ObSansBold18; }
+inline const lgfx::IFont* h2() { return &ObSansBold12; }
+inline const lgfx::IFont* ui() { return &ObSans9; }
+inline const lgfx::IFont* uiBold() { return &ObSansBold9; }
 inline const lgfx::IFont* small() { return &fonts::Font2; }
 }  // namespace font

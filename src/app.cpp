@@ -4,6 +4,9 @@
 
 #include "btkbd.h"
 #include "editor.h"
+#include "power.h"
+#include "radio.h"
+#include "webserver.h"
 #include "osk.h"
 #include "screens.h"
 
@@ -11,7 +14,7 @@ namespace app {
 
 namespace {
 
-enum class Kind { Folder, Note, Edit, Tools, Switcher, Bluetooth, Wifi, Prompt, Power };
+enum class Kind { Folder, Note, Edit, Tools, Switcher, Bluetooth, Wifi, Prompt, Power, Search };
 
 struct Nav {
   Kind kind;
@@ -27,6 +30,7 @@ BluetoothScreen bluetooth;
 WifiScreen wifi;
 PromptScreen promptScreen;
 PowerScreen powerScreen;
+SearchScreen searchScreen;
 
 std::vector<Nav> history;
 Screen* current = nullptr;
@@ -89,6 +93,9 @@ void show() {
       break;
     case Kind::Power:
       current = &powerScreen;
+      break;
+    case Kind::Search:
+      current = &searchScreen;
       break;
   }
   autoKeyboard();
@@ -208,6 +215,10 @@ void redraw() {
   if (dialog.active) drawDialog();
 }
 
+void reload() {
+  if (!history.empty()) show();
+}
+
 void toggleKeyboard() {
   osk::toggle();
   keyboardHiddenByUser = !osk::visible();
@@ -231,6 +242,7 @@ void handle(const input::Event& e) {
     return;
   }
   if (e.type == Type::Tap && osk::onTap(e.x, e.y)) return;
+  if (e.type == Type::Tap && ui::hitStatus(e.x, e.y)) return quickMenu();
   if (e.type == Type::Key && e.ctrl() && e.key == K_CHAR && current != &switcher) {
     if (e.ch == 'o') return openSwitcher(SwitcherMode::Open, contextDir());
     if (e.ch == 'n') return openSwitcher(SwitcherMode::New, contextDir());
@@ -256,6 +268,52 @@ void openFolder(const std::string& dir, int scroll) { push(Kind::Folder, dir, sc
 void openNote(const std::string& path, int scroll) { push(Kind::Note, path, scroll); }
 void openTools() { push(Kind::Tools, "", 0); }
 void openPower() { push(Kind::Power, "", 0); }
+void openSearch() { push(Kind::Search, "", 0); }
+
+void openNoteAt(const std::string& path, int line) {
+  push(Kind::Note, path, 0);
+  editor.revealLine(line);
+}
+
+static bool inFolder(const std::string& p, const std::string& dir) {
+  return p == dir || (p.size() > dir.size() && p.compare(0, dir.size(), dir) == 0 && p[dir.size()] == '/');
+}
+
+void folderPathChanged(const std::string& from, const std::string& to) {
+  bool top = !history.empty() && inFolder(history.back().path, from);
+  for (auto& n : history)
+    if (inFolder(n.path, from)) n.path = to + n.path.substr(from.size());
+  if (top && current && current != &promptScreen) show();
+}
+
+void folderDeleted(const std::string& dir) {
+  const bool topAffected = !history.empty() && inFolder(history.back().path, dir);
+  std::vector<Nav> kept;
+  for (auto& n : history)
+    if (!inFolder(n.path, dir)) kept.push_back(n);
+  history = kept;
+  if (history.empty()) history.push_back({Kind::Folder, storage::parentDir(dir), 0});
+  if (topAffected) {
+    current = nullptr;  // everything shown was inside the deleted folder
+    if (history.back().kind != Kind::Folder) history.push_back({Kind::Folder, storage::parentDir(dir), 0});
+    show();
+  } else {
+    externalChange(dir);
+  }
+}
+
+void quickMenu() {
+  const bool wifi = radio::mode() == radio::Mode::Wifi;
+  std::string status = wifi ? (web::state() == web::State::Connected ? "WiFi: " + web::ip() : std::string("WiFi: ") + web::stateText())
+                            : radio::mode() == radio::Mode::Bluetooth ? std::string("Keyboard: ") + btkbd::stateText()
+                                                                      : std::string("Radios off");
+  menu(status, {wifi ? "Switch to Bluetooth keyboard" : "Switch to WiFi web server", "Screen off", "Sleep now"},
+       [wifi](int i) {
+         if (i == 0) radio::switchTo(wifi ? radio::Mode::Bluetooth : radio::Mode::Wifi);
+         if (i == 1) power::screenOff();
+         if (i == 2) power::deepSleep();
+       });
+}
 void openBluetooth() { push(Kind::Bluetooth, "", 0); }
 void openWifi() { push(Kind::Wifi, "", 0); }
 
@@ -335,8 +393,10 @@ void home() {
 }
 
 void notePathChanged(const std::string& from, const std::string& to) {
+  bool top = !history.empty() && history.back().path == from;
   for (auto& n : history)
     if (n.path == from) n.path = to;
+  if (top && current && current != &switcher) show();  // the open note now lives at `to`
 }
 
 std::string currentNote(bool* editing) {
@@ -348,7 +408,9 @@ std::string currentNote(bool* editing) {
   return n.path;
 }
 
-void prepareSleep() {
+void prepareSleep() { saveCurrent(); }
+
+void saveCurrent() {
   if (current) current->onLeave();
 }
 
@@ -364,14 +426,19 @@ void externalChange(const std::string& path) {
 }
 
 void noteDeleted(const std::string& path) {
-  std::string dir = storage::parentDir(path);
+  const bool topAffected = !history.empty() && history.back().path == path && history.back().kind != Kind::Folder;
   std::vector<Nav> kept;
   for (auto& n : history)
     if (n.path != path || n.kind == Kind::Folder) kept.push_back(n);
   history = kept;
-  current = nullptr;
-  if (history.empty() || history.back().kind == Kind::Switcher) history.push_back({Kind::Folder, dir, 0});
-  show();
+  if (history.empty()) history.push_back({Kind::Folder, storage::parentDir(path), 0});
+  if (topAffected || history.back().kind == Kind::Switcher) {
+    current = nullptr;  // that note is gone; nothing to save
+    if (history.back().kind == Kind::Switcher) history.push_back({Kind::Folder, storage::parentDir(path), 0});
+    show();
+  } else {
+    externalChange(path);  // refresh a folder listing that showed it
+  }
 }
 
 void toast(const std::string& msg, uint32_t ms) {

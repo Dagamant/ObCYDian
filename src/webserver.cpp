@@ -191,6 +191,7 @@ void handleDeleteNote() {
   if (!requireCard()) return;
   std::string path = arg("path");
   if (!isNotePath(path)) return sendError(400, "Bad path");
+  app::saveCurrent();
   if (!storage::remove(path)) return sendError(404, "Delete failed");
   Serial.printf("[web] deleted %s\n", path.c_str());
   app::noteDeleted(path);
@@ -203,10 +204,10 @@ void handleRename() {
   if (!isNotePath(from) || !isNotePath(to)) return sendError(400, "Bad path");
   if (storage::exists(to)) return sendError(409, "A note with that name exists");
   int links = 0;
+  app::saveCurrent();
   if (!storage::renameNote(from, to, &links)) return sendError(500, "Rename failed");
   Serial.printf("[web] renamed %s -> %s (%d links)\n", from.c_str(), to.c_str(), links);
   app::notePathChanged(from, to);
-  app::externalChange(to);
   sendJson(200, "{\"path\":" + q(to) + ",\"links\":" + std::to_string(links) + "}");
 }
 
@@ -221,6 +222,67 @@ void handleBacklinks() {
     first = false;
   }
   sendJson(200, j + "]");
+}
+
+// Folder paths: absolute, inside the vault, not the root itself
+bool isFolderPath(const std::string& p) { return safePath(p) && p.size() > 1 && p.back() != '/'; }
+
+void handleMakeFolder() {
+  if (!requireCard()) return;
+  std::string path = arg("path");
+  if (!isFolderPath(path)) return sendError(400, "Bad path");
+  if (storage::exists(path)) return sendError(409, "Already exists");
+  if (!storage::mkdirs(path)) return sendError(500, "Couldn't create folder");
+  storage::rescan();
+  app::externalChange(path);
+  sendJson(200, "{\"path\":" + q(path) + "}");
+}
+
+void handleRenameFolder() {
+  if (!requireCard()) return;
+  std::string from = arg("from"), to = arg("to");
+  if (!isFolderPath(from) || !isFolderPath(to)) return sendError(400, "Bad path");
+  if (storage::exists(to)) return sendError(409, "Something with that name exists");
+  int links = 0;
+  app::saveCurrent();
+  if (!storage::renameFolder(from, to, &links)) return sendError(500, "Rename failed");
+  Serial.printf("[web] renamed folder %s -> %s (%d links)\n", from.c_str(), to.c_str(), links);
+  app::folderPathChanged(from, to);
+  sendJson(200, "{\"path\":" + q(to) + ",\"links\":" + std::to_string(links) + "}");
+}
+
+void handleDeleteFolder() {
+  if (!requireCard()) return;
+  std::string path = arg("path");
+  if (!isFolderPath(path)) return sendError(400, "Bad path");
+  app::saveCurrent();
+  bool ok = storage::removeFolder(path);
+  Serial.printf("[web] deleted folder %s\n", path.c_str());
+  app::folderDeleted(path);
+  if (!ok) return sendError(500, "Couldn't delete everything");
+  sendJson(200, "{}");
+}
+
+void handleSearch() {
+  if (!requireCard()) return;
+  std::string query = arg("q");
+  std::string j = "[";
+  bool first = true;
+  for (auto& h : storage::searchText(query, 60)) {
+    j += std::string(first ? "" : ",") + "{\"path\":" + q(h.path) + ",\"line\":" + std::to_string(h.line) +
+         ",\"text\":" + q(h.text.size() > 200 ? h.text.substr(0, 200) : h.text) + "}";
+    first = false;
+  }
+  sendJson(200, j + "]");
+}
+
+void handleRadio() {
+  std::string m = arg("mode");
+  radio::Mode mode = m == "bluetooth" ? radio::Mode::Bluetooth : m == "wifi" ? radio::Mode::Wifi : m == "off" ? radio::Mode::Off : (radio::Mode)-1;
+  if ((int)mode < 0) return sendError(400, "mode must be bluetooth, wifi or off");
+  sendJson(200, "{\"ok\":true}");
+  delay(300);
+  radio::switchTo(mode);
 }
 
 void handleFile() {
@@ -277,6 +339,11 @@ void startServer() {
   server.on("/api/rename", HTTP_POST, handleRename);
   server.on("/api/backlinks", HTTP_GET, handleBacklinks);
   server.on("/api/file", HTTP_GET, handleFile);
+  server.on("/api/folder", HTTP_POST, handleMakeFolder);
+  server.on("/api/folder", HTTP_DELETE, handleDeleteFolder);
+  server.on("/api/folder/rename", HTTP_POST, handleRenameFolder);
+  server.on("/api/search", HTTP_GET, handleSearch);
+  server.on("/api/radio", HTTP_POST, handleRadio);
   server.on("/api/wifi/scan", HTTP_GET, handleScan);
   server.on("/api/wifi", HTTP_POST, handleSetWifi);
   server.onNotFound(handleNotFound);
@@ -340,7 +407,25 @@ void loop() {
       lostAt = 0;
     }
   }
-  if (state_ == State::AccessPoint) dns.processNextRequest();
+  if (state_ == State::AccessPoint) {
+    dns.processNextRequest();
+    // With a saved network, keep retrying it in the background (the AP stays up meanwhile)
+    static uint32_t lastTry = 0;
+    if (!ssid_.empty()) {
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("[wifi] reached '%s' after all, closing the setup network\n", ssid_.c_str());
+        dns.stop();
+        WiFi.softAPdisconnect(true);
+        WiFi.mode(WIFI_STA);
+        state_ = State::Connected;
+        MDNS.begin(kHostname);
+        MDNS.addService("http", "tcp", 80);
+      } else if (millis() - lastTry > 30000) {
+        lastTry = millis();
+        WiFi.begin(ssid_.c_str(), pass_.c_str());
+      }
+    }
+  }
   if (serverStarted_) server.handleClient();
 }
 

@@ -24,6 +24,7 @@ class BrowserScreen : public Screen {
   int maxScroll() const;
   void activate(int i);
   void newNote();
+  void folderMenu();
   std::string dir_ = "/";
   std::vector<storage::Entry> entries_;
   int scroll_ = 0;
@@ -125,4 +126,26 @@ class PowerScreen : public Screen {
  private:
   void drawRows();
   ui::Rect btnDim_, btnBright_, btnScreen_, btnSleep_, btnOffNow_, btnSleepNow_, btnCalibrate_;
+};
+
+// Full-text search across all notes.
+class SearchScreen : public Screen {
+ public:
+  void draw() override;
+  void onTap(int x, int y) override;
+  void onDrag(int dy) override;
+  void onKey(const input::Event& e) override;
+  void tick() override;
+  bool acceptsText() const override { return true; }
+
+ private:
+  void drawInput();
+  void drawResults();
+  void run();
+  int rowsVisible() const;
+  std::string query_, ran_;
+  size_t cursor_ = 0;
+  std::vector<storage::Hit> hits_;
+  int sel_ = 0, first_ = 0;
+  uint32_t dueAt_ = 0;
 };

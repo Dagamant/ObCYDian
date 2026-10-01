@@ -19,6 +19,8 @@ class EditorScreen : public Screen {
   bool save();
   // Reloads from the card unless there are unsaved edits (which then win on next save).
   void reloadIfClean();
+  // Scrolls so 0-based source line `line` is near the top (and puts the cursor there).
+  void revealLine(int line);
 
   void draw() override;
   void onTap(int x, int y) override;

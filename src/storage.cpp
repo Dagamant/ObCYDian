@@ -234,6 +234,97 @@ bool renameNote(const std::string& from, const std::string& to, int* linksUpdate
   return true;
 }
 
+static bool startsWithCI(const std::string& s, const std::string& prefix) {
+  return s.size() >= prefix.size() && strncasecmp(s.c_str(), prefix.c_str(), prefix.size()) == 0;
+}
+
+int countNotesIn(const std::string& dir) {
+  int n = 0;
+  for (auto& p : index_)
+    if (startsWithCI(p, dir + "/")) n++;
+  return n;
+}
+
+bool renameFolder(const std::string& from, const std::string& to, int* linksUpdated) {
+  *linksUpdated = 0;
+  if (st != State::Mounted || from == "/" || sd.exists(to.c_str())) return false;
+  if (startsWithCI(to + "/", from + "/")) return false;  // can't move a folder into itself
+  mkdirs(parentDir(to));
+  if (!sd.rename(from.c_str(), to.c_str())) return false;
+  rescan();
+  // Links written with the folder path ([[Old/Note]], [[/Old/Note]]) need the new path
+  const std::string oldRel = from.substr(1), newRel = to.substr(1);
+  for (const auto& note : std::vector<std::string>(index_)) {
+    std::string text;
+    if (!readFile(note, text)) continue;
+    bool changed = false;
+    for (size_t a = text.find("[["); a != std::string::npos; a = text.find("[[", a + 2)) {
+      size_t t = a + 2;
+      if (t < text.size() && text[t] == '/') t++;
+      if (startsWithCI(text.substr(t, oldRel.size() + 1), oldRel + "/")) {
+        text.replace(t, oldRel.size(), newRel);
+        changed = true;
+        (*linksUpdated)++;
+      }
+    }
+    if (changed) writeFile(note, text);
+  }
+  return true;
+}
+
+static bool removeTree(const std::string& dir, int depth) {
+  if (depth > 10) return false;
+  FsFile d, f;
+  if (!d.open(dir.c_str(), O_RDONLY)) return false;
+  std::vector<std::pair<std::string, bool>> entries;
+  char name[256];
+  while (f.openNext(&d, O_RDONLY)) {
+    f.getName(name, sizeof(name));
+    entries.push_back({joinPath(dir, name), f.isDir()});
+    f.close();
+  }
+  d.close();
+  for (auto& e : entries) {
+    if (e.second ? !removeTree(e.first, depth + 1) : !sd.remove(e.first.c_str())) return false;
+  }
+  return sd.rmdir(dir.c_str());
+}
+
+bool removeFolder(const std::string& dir) {
+  if (st != State::Mounted || dir == "/" || dir.empty()) return false;
+  bool ok = removeTree(dir, 0);
+  rescan();
+  return ok;
+}
+
+std::vector<Hit> searchText(const std::string& query, size_t maxResults) {
+  std::vector<Hit> out;
+  if (query.empty()) return out;
+  std::string q;
+  for (char c : query) q += tolower((unsigned char)c);
+  for (const auto& note : std::vector<std::string>(index_)) {
+    std::string text;
+    if (!readFile(note, text)) continue;
+    std::string lower = text;
+    for (auto& c : lower) c = tolower((unsigned char)c);
+    int perNote = 0;
+    for (size_t at = lower.find(q); at != std::string::npos && perNote < 3; at = lower.find(q, at + q.size())) {
+      size_t ls = text.rfind('\n', at);
+      ls = ls == std::string::npos ? 0 : ls + 1;
+      size_t le = text.find('\n', at);
+      if (le == std::string::npos) le = text.size();
+      std::string line = text.substr(ls, le - ls);
+      size_t s = line.find_first_not_of(" \t");
+      line = s == std::string::npos ? "" : line.substr(s);
+      out.push_back({note, (int)std::count(text.begin(), text.begin() + ls, '\n'), line});
+      perNote++;
+      at = le;  // one hit per line
+      if (out.size() >= maxResults) return out;
+    }
+  }
+  return out;
+}
+
 std::string sanitizeName(const std::string& name) {
   std::string out;
   for (char c : name) out += strchr("\\:*?\"<>|", c) || (uint8_t)c < 32 ? '-' : c;

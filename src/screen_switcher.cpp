@@ -14,7 +14,7 @@ void SwitcherScreen::open(app::SwitcherMode mode, const std::string& dir, const 
   mode_ = mode;
   dir_ = dir;
   path_ = path;
-  query_ = mode == app::SwitcherMode::Rename ? tf::toAscii(storage::baseName(path)) : "";
+  query_ = mode == app::SwitcherMode::Rename ? storage::baseName(path) : "";
   cursor_ = query_.size();
   sel_ = 0;
   refresh();
@@ -95,7 +95,7 @@ void SwitcherScreen::drawList() {
     gfx.setTextColor(theme::MUTED);
     std::string hint = t.empty() ? "Type a name, then press Enter" : "Enter: " +
                        std::string(mode_ == app::SwitcherMode::New ? "create " : "rename to ") + t.substr(1);
-    gfx.drawString(ui::ellipsize(tf::toAscii(hint), W - 2 * theme::MARGIN, font::ui()).c_str(),
+    gfx.drawString(ui::ellipsize(tf::printable(hint), W - 2 * theme::MARGIN, font::ui()).c_str(),
                    theme::MARGIN + 4, kListY + 14);
     gfx.setFont(font::small());
     gfx.setTextColor(theme::FAINT);
@@ -112,7 +112,7 @@ void SwitcherScreen::drawList() {
       const std::string& p = results_[i];
       ui::noteIcon(gfx, theme::MARGIN + 8, y + 8, theme::MUTED);
       gfx.setTextColor(theme::TEXT_BRIGHT);
-      gfx.drawString(ui::ellipsize(tf::toAscii(storage::baseName(p)), W - 200, font::ui()).c_str(),
+      gfx.drawString(ui::ellipsize(tf::printable(storage::baseName(p)), W - 200, font::ui()).c_str(),
                      theme::MARGIN + 36, y + kRowH / 2 - 1);
       std::string folder = storage::parentDir(p);
       if (folder != "/") {
@@ -126,7 +126,7 @@ void SwitcherScreen::drawList() {
     } else {
       ui::icon(gfx, ui::Icon::Plus, theme::MARGIN + 18, y + kRowH / 2 - 1, theme::ACCENT);
       gfx.setTextColor(theme::ACCENT);
-      gfx.drawString(ui::ellipsize("Create \"" + tf::toAscii(query_) + "\"", W - 80, font::ui()).c_str(),
+      gfx.drawString(ui::ellipsize("Create \"" + tf::printable(query_) + "\"", W - 80, font::ui()).c_str(),
                      theme::MARGIN + 36, y + kRowH / 2 - 1);
     }
   }
@@ -173,10 +173,10 @@ void SwitcherScreen::onKey(const input::Event& e) {
       if (n) sel_ = (sel_ + (e.key == K_UP ? n - 1 : 1)) % n;
       return drawList();
     case K_LEFT:
-      if (cursor_ > 0) cursor_--;
+      cursor_ = tf::prevChar(query_, cursor_);
       return drawInput();
     case K_RIGHT:
-      if (cursor_ < query_.size()) cursor_++;
+      cursor_ = tf::nextChar(query_, cursor_);
       return drawInput();
     case K_HOME:
       cursor_ = 0;
@@ -186,7 +186,7 @@ void SwitcherScreen::onKey(const input::Event& e) {
       return drawInput();
     case K_BACKSPACE:
       if (cursor_ > 0) {
-        size_t from = cursor_ - 1;
+        size_t from = tf::prevChar(query_, cursor_);
         if (e.ctrl()) {
           while (from > 0 && query_[from - 1] == ' ') from--;
           while (from > 0 && query_[from - 1] != ' ' && query_[from - 1] != '/') from--;
@@ -198,7 +198,7 @@ void SwitcherScreen::onKey(const input::Event& e) {
       break;
     case K_DELETE:
       if (cursor_ < query_.size()) {
-        query_.erase(cursor_, 1);
+        query_.erase(cursor_, tf::nextChar(query_, cursor_) - cursor_);
         edited = true;
       }
       break;

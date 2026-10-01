@@ -29,7 +29,7 @@ void BluetoothScreen::drawBody() {
   gfx.setFont(font::ui());
   gfx.setTextColor(theme::MUTED);
   if (!name.empty() && st != State::Scanning && st != State::ScanDone)
-    gfx.drawString(tf::toAscii(name).c_str(), M + 24, y + 30);
+    gfx.drawString(tf::printable(name).c_str(), M + 24, y + 30);
   y += 64;
 
   gfx.setTextDatum(textdatum_t::top_left);
@@ -51,7 +51,7 @@ void BluetoothScreen::drawBody() {
         gfx.fillRoundRect(r.x, r.y, r.w, r.h, 6, theme::BG_ALT);
         gfx.setTextColor(theme::TEXT_BRIGHT);
         gfx.setTextDatum(textdatum_t::middle_left);
-        gfx.drawString(tf::toAscii(found[i].name).c_str(), r.x + 12, r.y + r.h / 2);
+        gfx.drawString(tf::printable(found[i].name).c_str(), r.x + 12, r.y + r.h / 2);
         gfx.setTextDatum(textdatum_t::middle_right);
         gfx.setTextColor(theme::MUTED);
         char sig[32];

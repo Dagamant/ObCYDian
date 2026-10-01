@@ -460,6 +460,7 @@ void EditorScreen::layoutLine(int i, bool revealed, Layout& L) {
       int len = tf::decodeUtf8(p, n, k, &cp);
       if (cp == '\t') w[k] = kTabW;
       else if (cp < 0x80) w[k] = tf::advance(f, (char)cp);
+      else if (int adv = tf::glyphAdvance(f, cp); adv >= 0) w[k] = adv;
       else {
         const char* a = tf::asciiFor(cp);
         w[k] = tf::width(f, a, strlen(a));
@@ -636,8 +637,12 @@ void EditorScreen::drawLine(LGFX_Sprite& s, const Layout& L, int y0) {
           k += len;
           break;
         }
-        const char* g = cp < 0x80 ? nullptr : tf::asciiFor(cp);
-        if (g) {
+        const int ga = cp < 0x80 ? -1 : tf::glyphAdvance(f, cp);
+        const char* g = (cp < 0x80 || ga >= 0) ? nullptr : tf::asciiFor(cp);
+        if (ga >= 0) {  // the font has it: copy the UTF-8 bytes as they are
+          if (bl_n + len < sizeof(buf) - 1) memcpy(buf + bl_n, p + k, len), bl_n += len;
+          width += ga;
+        } else if (g) {
           size_t gl = strlen(g);
           if (bl_n + gl < sizeof(buf) - 1) memcpy(buf + bl_n, g, gl), bl_n += gl;
           width += tf::width(f, g, gl);
@@ -795,7 +800,7 @@ void EditorScreen::drawStatus() {
 }
 
 void EditorScreen::drawTitle() {
-  ui::topBar(tf::toAscii(storage::baseName(path_)) + (dirty_ ? " *" : ""), ui::Icon::Back,
+  ui::topBar(tf::printable(storage::baseName(path_)) + (dirty_ ? " *" : ""), ui::Icon::Back,
              ui::Icon::More, reading_ ? ui::Icon::Pencil : ui::Icon::Eye,
              reading_ ? ui::Icon::None : ui::Icon::Keyboard);
   titleDirty_ = dirty_;
@@ -884,6 +889,20 @@ bool EditorScreen::save() {
 }
 
 void EditorScreen::onLeave() { save(); }
+
+void EditorScreen::revealLine(int line) {
+  if (lines_.empty()) return;
+  line = std::max(0, std::min<int>(line, lines_.size() - 1));
+  if (!reading_) {
+    lines_[cursorLine_].dirty = true;
+    cursor_ = anchor_ = lines_[line].start;
+    cursorLine_ = line;
+    lines_[line].dirty = true;
+    relayout();
+  }
+  scroll_ = std::max(0, std::min<int>(tops_[line] - 30, totalH_ - viewH()));
+  draw();
+}
 
 void EditorScreen::reloadIfClean() {
   if (dirty_) return;

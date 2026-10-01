@@ -1,6 +1,9 @@
 #include "ui.h"
 
 #include "battery.h"
+#include "btkbd.h"
+#include "radio.h"
+#include "webserver.h"
 #include "osk.h"
 
 namespace ui {
@@ -12,6 +15,30 @@ int contentBottom() { return gfx.height() - osk::height(); }
 static constexpr int kSlotW = 44;
 static constexpr int kBatteryW = 52;
 static int batteryX_ = -1;  // where the current top bar put the battery indicator
+static constexpr int kRadioW = 22;
+
+// Small Bluetooth rune / WiFi arcs, brighter when connected
+static void drawRadio(int x) {
+  const int cy = theme::BAR_H / 2;
+  gfx.fillRect(x, 4, kRadioW, theme::BAR_H - 9, theme::BAR);
+  if (radio::mode() == radio::Mode::Wifi) {
+    uint16_t c = web::state() == web::State::Connected ? theme::TEXT : theme::FAINT;
+    for (int r = 4; r <= 10; r += 3) gfx.drawArc(x + 10, cy + 5, r, r - 1, 225, 315, c);
+    gfx.fillCircle(x + 10, cy + 5, 1, c);
+  } else if (radio::mode() == radio::Mode::Bluetooth) {
+    uint16_t c = btkbd::state() == btkbd::State::Connected ? theme::TEXT : theme::FAINT;
+    int bx = x + 9;
+    gfx.drawLine(bx, cy - 7, bx, cy + 7, c);
+    gfx.drawLine(bx, cy - 7, bx + 4, cy - 3, c);
+    gfx.drawLine(bx + 4, cy - 3, bx - 4, cy + 4, c);
+    gfx.drawLine(bx, cy + 7, bx + 4, cy + 3, c);
+    gfx.drawLine(bx + 4, cy + 3, bx - 4, cy - 4, c);
+  }
+}
+
+bool hitStatus(int x, int y) {
+  return batteryX_ >= 0 && y < theme::BAR_H && x >= batteryX_ - kRadioW && x < batteryX_ + kBatteryW;
+}
 
 static void drawBattery(int x) {
   const int H = theme::BAR_H, cy = H / 2;
@@ -37,7 +64,9 @@ static void drawBattery(int x) {
 }
 
 void refreshBattery() {
-  if (batteryX_ >= 0) drawBattery(batteryX_);
+  if (batteryX_ < 0) return;
+  drawBattery(batteryX_);
+  drawRadio(batteryX_ - kRadioW);
 }
 
 void topBar(const std::string& title, Icon left, Icon right1, Icon right2, Icon right3) {
@@ -54,8 +83,9 @@ void topBar(const std::string& title, Icon left, Icon right1, Icon right2, Icon 
   }
   batteryX_ = w - (slots ? slots * kSlotW + 4 : theme::MARGIN) - kBatteryW;
   drawBattery(batteryX_);
+  drawRadio(batteryX_ - kRadioW);
   int tx = left != Icon::None ? kIconHit : theme::MARGIN;
-  int maxW = batteryX_ - tx - 6;
+  int maxW = batteryX_ - kRadioW - tx - 6;
   gfx.setFont(font::uiBold());
   gfx.setTextColor(theme::TEXT_BRIGHT);
   gfx.setTextDatum(textdatum_t::middle_left);
@@ -112,6 +142,11 @@ void icon(LovyanGFX& g, Icon i, int cx, int cy, uint16_t c) {
       for (int k = 0; k < 4; k++) g.fillRect(cx - 8 + k * 5, cy - 4, 3, 2, c);
       for (int k = 0; k < 4; k++) g.fillRect(cx - 8 + k * 5, cy - 1, 3, 2, c);
       g.fillRect(cx - 5, cy + 3, 10, 2, c);
+      break;
+    case Icon::Search:
+      g.drawCircle(cx - 2, cy - 2, 7, c);
+      g.drawCircle(cx - 2, cy - 2, 6, c);
+      g.drawWideLine(cx + 3, cy + 3, cx + 9, cy + 9, 1.8f, c);
       break;
     case Icon::None:
       break;

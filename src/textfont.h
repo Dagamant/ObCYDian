@@ -35,7 +35,17 @@ int decodeUtf8(const char* s, size_t len, size_t i, uint32_t* cp);
 // ASCII stand-in for a codepoint the bitmap fonts can't draw ("" to skip it).
 const char* asciiFor(uint32_t cp);
 
-// Converts UTF-8 text to the ASCII subset the fonts can draw (for names and labels).
+// Advance of codepoint `cp` in font `id`, or -1 if the font has no glyph for it.
+int glyphAdvance(uint8_t id, uint32_t cp);
+
+// Text for the extended note/UI fonts: keeps every character they can draw, swaps the rest
+// for ASCII stand-ins.
+std::string printable(const std::string& s);
+// Plain ASCII version (for the small built-in UI font).
 std::string toAscii(const std::string& s);
+
+// UTF-8 aware cursor steps within a string.
+size_t prevChar(const std::string& s, size_t i);
+size_t nextChar(const std::string& s, size_t i);
 
 }  // namespace tf

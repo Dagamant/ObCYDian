@@ -71,6 +71,49 @@ const char* asciiFor(uint32_t cp) {
   }
 }
 
+int glyphAdvance(uint8_t id, uint32_t cp) {
+  if (cp < 0x80) return advance(id, (char)cp);
+  if (cp > 0xFFFF) return -1;
+  // Same lookup as GFXfont::getGlyph (which is private): find the EncodeRange holding cp
+  auto* f = static_cast<const lgfx::GFXfont*>(get(id).font);
+  if (cp < f->first || cp > f->last) return -1;
+  if (f->range_num == 0) return f->glyph[cp - f->first].xAdvance;
+  for (uint16_t i = 0; i < f->range_num; i++) {
+    const auto& r = f->range[i];
+    if (cp >= r.start && cp <= r.end) return f->glyph[cp - r.start + r.base].xAdvance;
+  }
+  return -1;
+}
+
+std::string printable(const std::string& s) {
+  std::string out;
+  out.reserve(s.size());
+  for (size_t i = 0; i < s.size();) {
+    uint32_t cp;
+    int n = decodeUtf8(s.data(), s.size(), i, &cp);
+    if (cp == '\t') out += "    ";
+    else if (cp == '\r') {
+    } else if (cp < 0x80 || glyphAdvance(BODY, cp) >= 0) out.append(s, i, n);
+    else out += asciiFor(cp);
+    i += n;
+  }
+  return out;
+}
+
+size_t prevChar(const std::string& s, size_t i) {
+  if (i == 0) return 0;
+  i--;
+  while (i > 0 && ((uint8_t)s[i] & 0xC0) == 0x80) i--;
+  return i;
+}
+
+size_t nextChar(const std::string& s, size_t i) {
+  if (i >= s.size()) return s.size();
+  i++;
+  while (i < s.size() && ((uint8_t)s[i] & 0xC0) == 0x80) i++;
+  return i;
+}
+
 std::string toAscii(const std::string& s) {
   std::string out;
   out.reserve(s.size());

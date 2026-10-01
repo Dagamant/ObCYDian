@@ -24,7 +24,7 @@ void WifiScreen::drawBody() {
   auto line = [&](const std::string& s, uint16_t color = theme::TEXT, const lgfx::IFont* f = font::ui(), int dy = 24) {
     gfx.setFont(f);
     gfx.setTextColor(color);
-    gfx.drawString(ui::ellipsize(tf::toAscii(s), textW, f).c_str(), M, y);
+    gfx.drawString(ui::ellipsize(tf::printable(s), textW, f).c_str(), M, y);
     y += dy;
   };
   const std::string saved = web::savedSsid();
@@ -143,7 +143,7 @@ void PromptScreen::draw() {
   gfx.fillRect(0, theme::BAR_H, gfx.width(), ui::contentBottom() - theme::BAR_H, theme::BG);
   gfx.setFont(font::ui());
   gfx.setTextColor(theme::MUTED);
-  gfx.drawString(tf::toAscii(hint_).c_str(), theme::MARGIN + 4, theme::BAR_H + 14);
+  gfx.drawString(tf::printable(hint_).c_str(), theme::MARGIN + 4, theme::BAR_H + 14);
   gfx.setFont(font::small());
   gfx.setTextColor(theme::FAINT);
   gfx.drawString(secret_ ? "Enter to confirm, Esc to cancel, Tab shows/hides the text" : "Enter to confirm, Esc to cancel",
@@ -155,8 +155,8 @@ void PromptScreen::drawInput() {
   const int x = theme::MARGIN, w = gfx.width() - 2 * theme::MARGIN;
   gfx.fillRoundRect(x, kInputY, w, kInputH, 6, theme::BG_ALT);
   gfx.drawRoundRect(x, kInputY, w, kInputH, 6, theme::ACCENT_DIM);
-  std::string shown = (secret_ && !reveal_) ? std::string(text_.size(), '*') : tf::toAscii(text_);
-  size_t cur = (secret_ && !reveal_) ? cursor_ : tf::toAscii(text_.substr(0, cursor_)).size();
+  std::string shown = (secret_ && !reveal_) ? std::string(text_.size(), '*') : tf::printable(text_);
+  size_t cur = (secret_ && !reveal_) ? cursor_ : tf::printable(text_.substr(0, cursor_)).size();
   size_t off = 0;
   while (off < cur && gfx.textWidth(shown.substr(off, cur - off).c_str(), font::ui()) > w - 40) off++;
   gfx.setFont(font::ui());
@@ -180,15 +180,19 @@ void PromptScreen::onKey(const input::Event& e) {
       return;
     }
     case K_TAB: reveal_ = !reveal_; break;
-    case K_LEFT: if (cursor_ > 0) cursor_--; break;
-    case K_RIGHT: if (cursor_ < text_.size()) cursor_++; break;
+    case K_LEFT: cursor_ = tf::prevChar(text_, cursor_); break;
+    case K_RIGHT: cursor_ = tf::nextChar(text_, cursor_); break;
     case K_HOME: cursor_ = 0; break;
     case K_END: cursor_ = text_.size(); break;
     case K_BACKSPACE:
-      if (cursor_ > 0) text_.erase(--cursor_, 1);
+      if (cursor_ > 0) {
+        size_t from = tf::prevChar(text_, cursor_);
+        text_.erase(from, cursor_ - from);
+        cursor_ = from;
+      }
       break;
     case K_DELETE:
-      if (cursor_ < text_.size()) text_.erase(cursor_, 1);
+      if (cursor_ < text_.size()) text_.erase(cursor_, tf::nextChar(text_, cursor_) - cursor_);
       break;
     case K_CHAR:
       if (e.ctrl() || e.alt() || text_.size() >= 64) return;

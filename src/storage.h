@@ -50,6 +50,21 @@ bool rename(const std::string& from, const std::string& to);
 // Returns false if the rename failed; *linksUpdated gets the number of links rewritten.
 bool renameNote(const std::string& from, const std::string& to, int* linksUpdated);
 
+// Folders
+int countNotesIn(const std::string& dir);  // recursive
+// Renames/moves a folder and rewrites path-qualified [[links]] into it ([[Old/Note]]).
+bool renameFolder(const std::string& from, const std::string& to, int* linksUpdated);
+// Deletes a folder and everything inside it.
+bool removeFolder(const std::string& dir);
+
+// Full-text search: case-insensitive substring over every note's text.
+struct Hit {
+  std::string path;
+  int line;          // 0-based line number of the match
+  std::string text;  // that line, trimmed
+};
+std::vector<Hit> searchText(const std::string& query, size_t maxResults);
+
 // Replaces characters FAT can't store; trims spaces and dots at the ends.
 std::string sanitizeName(const std::string& name);
 // Creates an empty note. `nameOrPath` may contain folders ("Projects/Plan"); it is

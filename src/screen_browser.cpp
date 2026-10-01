@@ -17,9 +17,10 @@ int BrowserScreen::maxScroll() const {
 void BrowserScreen::draw() {
   // "Vault > Projects > Ideas"
   std::string title = "Vault";
-  for (char c : tf::toAscii(dir_ == "/" ? "" : dir_)) title += c == '/' ? std::string(" > ") : std::string(1, c);
-  ui::topBar(title, dir_ == "/" ? ui::Icon::None : ui::Icon::Back, ui::Icon::Gear,
-             storage::state() == storage::State::Mounted ? ui::Icon::Plus : ui::Icon::None);
+  for (char c : tf::printable(dir_ == "/" ? "" : dir_)) title += c == '/' ? std::string(" > ") : std::string(1, c);
+  const bool card = storage::state() == storage::State::Mounted;
+  ui::topBar(title, dir_ == "/" ? ui::Icon::None : ui::Icon::Back, card ? ui::Icon::More : ui::Icon::Gear,
+             card ? ui::Icon::Search : ui::Icon::None, card ? ui::Icon::Gear : ui::Icon::None);
 
   const int top = theme::BAR_H;
   action_ = {};
@@ -72,7 +73,7 @@ void BrowserScreen::drawList() {
       s.setFont(font::ui());
       s.setTextColor(theme::TEXT);
       s.setTextDatum(textdatum_t::middle_left);
-      s.drawString(ui::ellipsize(tf::toAscii(name), w - 90, font::ui()).c_str(), 44,
+      s.drawString(ui::ellipsize(tf::printable(name), w - 90, font::ui()).c_str(), 44,
                    y + kRowH / 2);
       if (e.isDir) {
         int cx = w - 24, cy = y + kRowH / 2;
@@ -94,8 +95,10 @@ void BrowserScreen::drawList() {
 void BrowserScreen::onTap(int x, int y) {
   if (ui::hitLeft(x, y) && dir_ != "/") return app::back();
   int slot = ui::hitRightSlot(x, y);
-  if (slot == 0) return app::openTools();
-  if (slot == 1 && storage::state() == storage::State::Mounted) return newNote();
+  const bool card = storage::state() == storage::State::Mounted;
+  if (slot == 0) return card ? folderMenu() : app::openTools();
+  if (slot == 1 && card) return app::openSearch();
+  if (slot == 2 && card) return app::openTools();
   if (y < theme::BAR_H) return;
 
   if (action_.w && action_.contains(x, y)) {
@@ -136,6 +139,65 @@ void BrowserScreen::newNote() {
   std::string p = storage::createNote(dir_, storage::baseName(storage::untitledPath(dir_)));
   if (p.empty()) return app::toast("Couldn't create note");
   app::editNote(p);
+}
+
+void BrowserScreen::folderMenu() {
+  const std::string dir = dir_;
+  const std::string name = dir == "/" ? "Vault" : storage::baseName(dir);
+  std::vector<std::string> items = {"New note", "New folder"};
+  if (dir != "/") {
+    items.push_back("Rename / move folder");
+    items.push_back("Delete folder");
+  }
+  app::menu(tf::printable(name), items, [this, dir, name](int i) {
+    if (i == 0) return newNote();
+    if (i == 1) {
+      return app::prompt("New folder", "Name for a new folder in " + name, "", false, [dir](const std::string& n) {
+        std::string clean = storage::sanitizeName(n);
+        if (clean.empty()) return;
+        std::string path = storage::joinPath(dir, clean);
+        if (storage::exists(path)) return app::toast("That folder already exists");
+        if (!storage::mkdirs(path)) return app::toast("Couldn't create folder");
+        storage::rescan();
+        app::openFolder(path);
+      });
+    }
+    if (i == 2) {
+      return app::prompt("Rename folder", "New name (use / to move it, e.g. Archive/2026)", storage::baseName(dir), false,
+                         [dir](const std::string& n) {
+                           if (n.empty()) return;
+                           // A plain name stays in the same parent; a path is from the vault root
+                           std::string to;
+                           if (n.find('/') == std::string::npos) to = storage::joinPath(storage::parentDir(dir), storage::sanitizeName(n));
+                           else {
+                             to = "";
+                             size_t i = 0;
+                             while (i <= n.size()) {
+                               size_t j = n.find('/', i);
+                               if (j == std::string::npos) j = n.size();
+                               std::string seg = storage::sanitizeName(n.substr(i, j - i));
+                               if (!seg.empty()) to += "/" + seg;
+                               i = j + 1;
+                             }
+                           }
+                           if (to.empty() || to == dir) return;
+                           if (storage::exists(to)) return app::toast("Something with that name exists");
+                           int links = 0;
+                           if (!storage::renameFolder(dir, to, &links)) return app::toast("Rename failed");
+                           app::folderPathChanged(dir, to);  // re-shows the folder under its new name
+                           if (links) app::toast("Updated " + std::to_string(links) + (links == 1 ? " link" : " links"));
+                         });
+    }
+    if (i == 3) {
+      int n = storage::countNotesIn(dir);
+      std::string what = n ? "It holds " + std::to_string(n) + (n == 1 ? " note" : " notes") + ", also deleted." : "The folder is empty.";
+      app::confirm("Delete " + tf::printable(name) + "?", what, "Delete", theme::DANGER, [dir] {
+        bool ok = storage::removeFolder(dir);
+        app::folderDeleted(dir);
+        app::toast(ok ? "Folder deleted" : "Couldn't delete everything");
+      });
+    }
+  });
 }
 
 void BrowserScreen::onKey(const input::Event& e) {

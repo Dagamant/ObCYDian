@@ -29,6 +29,18 @@ nav summary{list-style:none;color:var(--muted)}
 nav summary::before{content:"\25B8";display:inline-block;width:14px;transition:transform .1s}
 nav details[open]>summary::before{transform:rotate(90deg)}
 nav .hint{color:var(--faint);font-size:12px;padding:2px 8px}
+nav summary .open{float:right;color:var(--faint);padding:0 4px;text-decoration:none;visibility:hidden}
+nav summary:hover .open,nav summary .open:focus{visibility:visible}
+@media (hover:none){nav summary .open{visibility:visible}}
+nav a.root{font-weight:600;color:var(--muted)}
+nav .section{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:10px 8px 2px}
+nav a.hit{white-space:normal;line-height:1.35;padding:5px 8px}
+nav a.hit small{display:block;color:var(--muted);font-size:12px}
+nav a.hit mark,.md mark.hit{background:var(--accent-bg);color:var(--bright);border-radius:2px}
+.list a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;color:var(--text);text-decoration:none}
+.list a:hover{background:var(--side)}
+.list .ico{width:20px;text-align:center;color:var(--muted)}
+.list .dir .ico{color:#d7b46a}
 main{flex:1;overflow:auto;padding:24px clamp(16px,5vw,60px) 80px}
 .page{max-width:760px;margin:0 auto}
 .head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -334,7 +346,7 @@ function treeHtml(node, prefix) {
   let h = "";
   for (const name of Object.keys(node.dirs).sort((a, b) => a.localeCompare(b, undefined, {sensitivity: "base"}))) {
     const path = prefix + "/" + name;
-    h += "<details data-dir=\"" + esc(path) + "\"" + (openFolders.has(path) ? " open" : "") + "><summary>" + esc(name) + "</summary><div>" + treeHtml(node.dirs[name], path) + "</div></details>";
+    h += "<details data-dir=\"" + esc(path) + "\"" + (openFolders.has(path) ? " open" : "") + "><summary>" + esc(name) + '<a class="open" title="Folder page" href="#folder=' + esc(encodeURI(path)) + '">&#8943;</a></summary><div>' + treeHtml(node.dirs[name], path) + "</div></details>";
   }
   for (const n of node.notes.sort((a, b) => baseName(a).localeCompare(baseName(b), undefined, {sensitivity: "base"})))
     h += '<a href="#' + esc(encodeURI(n)) + '"' + (n === current ? ' class="active"' : "") + ">" + esc(baseName(n)) + "</a>";
@@ -346,14 +358,108 @@ function drawSide() {
   const side = $("#side");
   if (q) {
     const hits = notes.filter(n => n.toLowerCase().includes(q)).sort((a, b) => baseName(a).toLowerCase().indexOf(q) - baseName(b).toLowerCase().indexOf(q));
-    side.innerHTML = hits.map(n => '<a href="#' + esc(encodeURI(n)) + '" title="' + esc(n) + '">' + esc(baseName(n)) + (dirOf(n) ? ' <span class="hint">' + esc(dirOf(n).slice(1)) + "</span>" : "") + "</a>").join("") || '<div class="hint">No matches. Press Enter to create "' + esc(q) + '".</div>';
+    side.innerHTML = '<div class="section">Notes</div>' + (hits.map(n => '<a href="#' + esc(encodeURI(n)) + '" title="' + esc(n) + '">' + esc(baseName(n)) + (dirOf(n) ? ' <span class="hint">' + esc(dirOf(n).slice(1)) + "</span>" : "") + "</a>").join("") || '<div class="hint">No names match. Enter creates "' + esc(q) + '".</div>') +
+      '<div class="section">In note text</div><div id="texthits"><div class="hint">' + (q.length < 2 ? "Type at least 2 letters" : "Searching...") + "</div></div>";
+    searchText($("#search").value.trim());
   } else {
-    side.innerHTML = treeHtml(buildTree(), "") || '<div class="hint">No notes yet</div>';
+    side.innerHTML = '<a class="root" href="#folder=/">Vault</a>' + (treeHtml(buildTree(), "") || '<div class="hint">No notes yet</div>');
   }
   side.querySelectorAll("details").forEach(d => d.addEventListener("toggle", () => {
     d.open ? openFolders.add(d.dataset.dir) : openFolders.delete(d.dataset.dir);
     localStorage.setItem("openFolders", JSON.stringify([...openFolders]));
   }));
+}
+
+// Full-text search (debounced); results link to the note with the match highlighted
+let searchTimer = 0, searchSeq = 0, lastSearch = {q: null, hits: []};
+function searchText(q) {
+  clearTimeout(searchTimer);
+  if (q.length < 2) return;
+  // Re-drawing the sidebar (e.g. on navigation) reuses the last results instead of
+  // making the device read every note again.
+  if (lastSearch.q === q) return showTextHits(q, lastSearch.hits);
+  searchTimer = setTimeout(async () => {
+    const seq = ++searchSeq;
+    let hits = [];
+    try { hits = await (await api("GET", "/api/search?q=" + encodeURIComponent(q))).json(); } catch (e) {}
+    if (seq !== searchSeq) return;
+    lastSearch = {q, hits};
+    showTextHits(q, hits);
+  }, 300);
+}
+
+function showTextHits(q, hits) {
+    const el = $("#texthits");
+    if (!el) return;
+    const re = new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "ig");
+    el.innerHTML = hits.map(h => '<a class="hit" href="#' + esc(encodeURI(h.path)) + "?q=" + encodeURIComponent(q) + '">' + esc(baseName(h.path)) +
+      "<small>" + esc(h.text).replace(re, "<mark>$1</mark>") + "</small></a>").join("") || '<div class="hint">No matches</div>';
+}
+
+// Highlights the first occurrence of q in the rendered note and scrolls to it
+function highlight(q) {
+  const art = $("article.md");
+  if (!art || !q) return;
+  const walker = document.createTreeWalker(art, NodeFilter.SHOW_TEXT);
+  const lq = q.toLowerCase();
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const i = n.nodeValue.toLowerCase().indexOf(lq);
+    if (i < 0) continue;
+    const range = document.createRange();
+    range.setStart(n, i);
+    range.setEnd(n, i + q.length);
+    const mark = document.createElement("mark");
+    mark.className = "hit";
+    range.surroundContents(mark);
+    mark.scrollIntoView({block: "center"});
+    return;
+  }
+}
+
+// ---------------------------------------------------------------- folders
+async function showFolder(dir) {
+  current = null;
+  drawSide();
+  dir = dir === "/" ? "" : dir.replace(/\/$/, "");
+  const name = dir ? dir.slice(dir.lastIndexOf("/") + 1) : "Vault";
+  const subdirs = folders.filter(f => dirOf(f) === dir).sort((a, b) => a.localeCompare(b, undefined, {sensitivity: "base"}));
+  const here = notes.filter(n => dirOf(n) === dir).sort((a, b) => baseName(a).localeCompare(baseName(b), undefined, {sensitivity: "base"}));
+  const total = notes.filter(n => n.startsWith(dir + "/")).length;
+  $("#main").innerHTML = '<div class="page"><div class="head"><h1>' + esc(name) + "</h1>" +
+    '<button id="fnote" class="primary">New note</button><button id="fdir">New folder</button>' +
+    (dir ? '<button id="fren">Rename</button><button id="fdel" class="danger">Delete</button>' : "") + "</div>" +
+    '<div class="crumb">' + esc(dir ? "Vault / " + dir.slice(1).replace(/\//g, " / ") : "Top of the vault") + " &middot; " + total + " notes</div>" +
+    '<div class="list">' + subdirs.map(f => '<a class="dir" href="#folder=' + esc(encodeURI(f)) + '"><span class="ico">&#128193;</span>' + esc(baseName(f + ".md")) + "</a>").join("") +
+    here.map(n => '<a href="#' + esc(encodeURI(n)) + '"><span class="ico">&#128462;</span>' + esc(baseName(n)) + "</a>").join("") +
+    (subdirs.length + here.length ? "" : '<p class="status">This folder is empty.</p>') + "</div></div>";
+  document.title = name + " - ObCYDian";
+  $("#fnote").onclick = () => { const n = prompt("New note name:"); if (n) createNote((dir ? dir.slice(1) + "/" : "") + n); };
+  $("#fdir").onclick = async () => {
+    const n = prompt("New folder name:");
+    if (!n || !n.trim()) return;
+    const path = dir + "/" + n.trim().replace(/^\/+|\/+$/g, "");
+    try { await api("POST", "/api/folder?path=" + encodeURIComponent(path)); await loadTree(); location.hash = "folder=" + encodeURI(path); }
+    catch (e) { toast(e.message); }
+  };
+  if (!dir) return;
+  $("#fren").onclick = async () => {
+    const n = prompt("Rename or move folder (path from the top of the vault):", dir.slice(1));
+    if (!n || !n.trim()) return;
+    const to = "/" + n.trim().replace(/^\/+|\/+$/g, "");
+    if (to === dir) return;
+    try {
+      const r = await (await api("POST", "/api/folder/rename?from=" + encodeURIComponent(dir) + "&to=" + encodeURIComponent(to))).json();
+      toast(r.links ? "Renamed. Updated " + r.links + " link" + (r.links > 1 ? "s" : "") : "Renamed");
+      openFolders.delete(dir);
+      await loadTree();
+      location.hash = "folder=" + encodeURI(r.path);
+    } catch (e) { toast(e.message); }
+  };
+  $("#fdel").onclick = async () => {
+    if (!confirm('Delete folder "' + name + '"' + (total ? " and the " + total + " note" + (total > 1 ? "s" : "") + " in it" : "") + "? This can't be undone.")) return;
+    try { await api("DELETE", "/api/folder?path=" + encodeURIComponent(dir)); toast("Folder deleted"); await loadTree(); location.hash = "folder=" + encodeURI(dirOf(dir) || "/"); }
+    catch (e) { toast(e.message); }
+  };
 }
 
 async function loadTree() {
@@ -635,6 +741,7 @@ function caretCoords(ta, index) {
 }
 
 async function save() {
+  lastSearch.q = null;  // note text changed: search results may be stale
   const text = editing ? $("#ta").value : source;
   try {
     await api("PUT", notePath(current), text);
@@ -702,7 +809,8 @@ async function showSettings() {
     '<div class="card"><b>WiFi network</b><div class="status">The device joins this network at startup. ' + (s.ap ? "After saving, connect this phone/computer to the same network and open http://obcydian.local" : "") + "</div>" +
     '<label>Network name</label><input id="ssid" list="nets" value="' + esc(s.savedSsid || "") + '"><datalist id="nets"></datalist>' +
     '<label>Password</label><input id="pass" type="password" autocomplete="off">' +
-    '<p><button id="scan">Scan</button> <button id="savewifi" class="primary">Save &amp; connect</button></p></div></div>';
+    '<p><button id="scan">Scan</button> <button id="savewifi" class="primary">Save &amp; connect</button></p></div>' +
+    '<div class="card"><b>Radio</b><div class="status">Switch the device to the Bluetooth keyboard. The web server stops until you switch back on the device.</div><p><button id="tobt">Switch to Bluetooth keyboard</button></p></div></div>';
   $("#scan").onclick = async () => {
     $("#scan").textContent = "Scanning...";
     try {
@@ -711,6 +819,10 @@ async function showSettings() {
       toast(nets.length + " networks found");
     } catch (e) { toast(e.message); }
     $("#scan").textContent = "Scan";
+  };
+  $("#tobt").onclick = async () => {
+    if (!confirm("Switch to Bluetooth? This page stops working until WiFi mode is turned back on from the device.")) return;
+    try { await api("POST", "/api/radio?mode=bluetooth"); toast("Switching... the device is restarting"); } catch (e) { toast(e.message); }
   };
   $("#savewifi").onclick = async () => {
     const body = new URLSearchParams({ssid: $("#ssid").value, pass: $("#pass").value});
@@ -726,15 +838,19 @@ async function route() {
   document.body.classList.remove("side");
   const h = location.hash.slice(1);
   if (h === "settings") return showSettings();
+  if (h.startsWith("folder=")) return showFolder(decodeURI(h.slice(7)) || "/");
   if (!h) return showHome();
   const [p, query] = h.split("?");
-  const heading = new URLSearchParams(query || "").get("h");
+  const params = new URLSearchParams(query || "");
+  const heading = params.get("h"), find = params.get("q");
   const path = decodeURI(p);
   if (path === current && !editing) {
     if (heading) { const el = document.getElementById(slug(heading)); if (el) el.scrollIntoView(); }
+    if (find) { showNote(); highlight(find); }
     return;
   }
-  openNote(path, heading);
+  await openNote(path, heading);
+  if (find) highlight(find);
 }
 
 let lastHash = location.hash;

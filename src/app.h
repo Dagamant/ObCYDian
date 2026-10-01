@@ -40,6 +40,9 @@ void openTools();
 void openBluetooth();
 void openWifi();
 void openPower();
+void openSearch();
+// Opens a note in reading view scrolled to `line` (0-based).
+void openNoteAt(const std::string& path, int line);
 // Text prompt screen; `done` runs after the prompt closes with the entered text.
 void prompt(const std::string& title, const std::string& hint, const std::string& initial, bool secret,
             std::function<void(const std::string&)> done);
@@ -56,6 +59,8 @@ void home();
 // Keep navigation history consistent after a note is renamed or deleted.
 void notePathChanged(const std::string& from, const std::string& to);
 void noteDeleted(const std::string& path);
+void folderPathChanged(const std::string& from, const std::string& to);
+void folderDeleted(const std::string& dir);
 // A note was created or changed outside the device UI (e.g. from the web page): refresh
 // whatever is on screen if it shows that note or its folder.
 void externalChange(const std::string& path);
@@ -64,8 +69,14 @@ void externalChange(const std::string& path);
 std::string currentNote(bool* editing);
 // Saves anything unsaved before power-down.
 void prepareSleep();
+// Saves the open note (before files are renamed or deleted from elsewhere).
+void saveCurrent();
 
 void redraw();
+// Re-opens the screen on top of the history (e.g. after its path changed).
+void reload();
+// Battery/radio quick menu (switch radio, screen off, sleep).
+void quickMenu();
 // Shows/hides the on-screen keyboard and relays out the current screen.
 void toggleKeyboard();
 void toast(const std::string& msg, uint32_t ms = 2000);

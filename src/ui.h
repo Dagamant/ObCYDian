@@ -13,7 +13,7 @@ struct Rect {
   bool contains(int px, int py) const { return px >= x && px < x + w && py >= y && py < y + h; }
 };
 
-enum class Icon { None, Back, Gear, Files, Pencil, Eye, More, Plus, Keyboard };
+enum class Icon { None, Back, Gear, Files, Pencil, Eye, More, Plus, Keyboard, Search };
 
 // Bottom edge of the area screens may draw in (above the on-screen keyboard).
 int contentBottom();
@@ -23,6 +23,8 @@ void topBar(const std::string& title, Icon left, Icon right1 = Icon::None,
             Icon right2 = Icon::None, Icon right3 = Icon::None);
 // Redraws just the battery indicator in the current top bar (when the level changes).
 void refreshBattery();
+// True if (x, y) is on the radio/battery status area of the top bar.
+bool hitStatus(int x, int y);
 bool hitLeft(int x, int y);
 // Index of the right-hand icon slot under (x, y): 0 = rightmost, -1 = none.
 int hitRightSlot(int x, int y);
