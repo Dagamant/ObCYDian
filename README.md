@@ -39,6 +39,12 @@ An [Obsidian](https://obsidian.md)-style markdown notes app for the 3.5" ESP32 "
 - `[[Wikilinks]]` resolve the way Obsidian does: by name, `[[Folder/Note]]`, `[[Note|alias]]` and `[[Note#Heading]]`. Links to missing notes are shown faded, and following one creates the note.
 - Renaming or moving a note or folder updates the links that point to it.
 - Search covers note names (quick switcher) and full note text.
+- **Command palette** (Ctrl+P; also the ⋮ menu) with commands for the current note or folder.
+- **Outline** (jump to a heading), **backlinks**, **tags** (inline and frontmatter), and **open tasks** across the vault that you can tick off from the list.
+- **Bookmarks** and **recent notes** (stored in `/.obcydian/`).
+- **Templates** from `/Templates`, with `{{title}}`, `{{date}}`, `{{time}}` and `{{date:FORMAT}}` filled in.
+- **Daily notes** (Ctrl+D) in `/Daily/YYYY-MM-DD.md`, created from `Templates/Daily.md` if it exists. The board has no battery-backed clock: it gets the time from the internet in WiFi mode, or from the browser when the web app is open, keeps it through deep sleep, and asks for the date if it isn't set.
+- `%%comments%%` are hidden, and frontmatter `aliases:` work in links and the quick switcher.
 
 **Editor**
 - Live preview, like Obsidian: formatting is rendered as you type, and the markdown syntax only shows on the line you're editing. There's also a reading view.
