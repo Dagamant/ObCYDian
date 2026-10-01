@@ -878,6 +878,20 @@ bool EditorScreen::save() {
 
 void EditorScreen::onLeave() { save(); }
 
+void EditorScreen::reloadIfClean() {
+  if (dirty_) return;
+  uint32_t keep = cursor_;
+  open(path_, scroll_, reading_);
+  if (!reading_ && keep <= text_.size()) {
+    lines_[cursorLine_].dirty = true;
+    cursor_ = anchor_ = keep;
+    cursorLine_ = lineOf(cursor_);
+    lines_[cursorLine_].dirty = true;
+    relayout();
+  }
+  draw();
+}
+
 void EditorScreen::tick() {
   if (dirty_ && millis() - lastEdit_ > 2000) {
     save();

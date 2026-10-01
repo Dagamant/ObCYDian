@@ -13,6 +13,7 @@ static SPIClass sdSpi(VSPI);
 static SdFs sd;
 static State st = State::NoCard;
 static std::vector<std::string> index_;
+static std::vector<std::string> folders_;
 static uint32_t generation_ = 0;
 
 static bool endsWithCI(const std::string& s, const std::string& suffix) {
@@ -165,6 +166,22 @@ int64_t fileSize(const std::string& path) {
   return n;
 }
 
+bool streamFile(const std::string& path, const std::function<bool(const uint8_t*, size_t)>& sink) {
+  if (st != State::Mounted) return false;
+  FsFile f;
+  if (!f.open(path.c_str(), O_RDONLY)) return false;
+  static uint8_t buf[2048];
+  int n;
+  bool ok = true;
+  while ((n = f.read(buf, sizeof(buf))) > 0)
+    if (!sink(buf, n)) {
+      ok = false;
+      break;
+    }
+  f.close();
+  return ok && n == 0;
+}
+
 bool remove(const std::string& path) {
   if (st != State::Mounted || !sd.remove(path.c_str())) return false;
   rescan();
@@ -277,21 +294,27 @@ static void scanDir(const std::string& dir, int depth) {
     f.close();
   }
   d.close();
-  for (auto& s : subdirs) scanDir(s, depth + 1);
+  for (auto& s : subdirs) {
+    folders_.push_back(s);
+    scanDir(s, depth + 1);
+  }
 }
 
 void rescan() {
   index_.clear();
+  folders_.clear();
   generation_++;
   if (st != State::Mounted) return;
   uint32_t t = millis();
   scanDir("/", 0);
   std::sort(index_.begin(), index_.end(), lessCaseInsensitive);
+  std::sort(folders_.begin(), folders_.end(), lessCaseInsensitive);
   generation_++;
   Serial.printf("[sd] indexed %u notes in %lu ms\n", (unsigned)index_.size(), millis() - t);
 }
 
 const std::vector<std::string>& notes() { return index_; }
+const std::vector<std::string>& folders() { return folders_; }
 
 uint32_t generation() { return generation_; }
 
@@ -335,6 +358,29 @@ std::vector<std::string> search(const std::string& query, size_t maxResults) {
   for (auto& h : hits) {
     if (out.size() >= maxResults) break;
     out.push_back(*h.path);
+  }
+  return out;
+}
+
+std::vector<std::pair<std::string, std::string>> backlinks(const std::string& path) {
+  std::vector<std::pair<std::string, std::string>> out;
+  for (const auto& note : std::vector<std::string>(index_)) {
+    if (note == path) continue;
+    std::string text;
+    if (!readFile(note, text)) continue;
+    for (size_t a = text.find("[["); a != std::string::npos; a = text.find("[[", a + 2)) {
+      size_t b = text.find("]]", a + 2);
+      if (b == std::string::npos) break;
+      size_t end = std::min(text.find_first_of("|#", a + 2), b);
+      if (resolveLink(text.substr(a + 2, end - a - 2), note) != path) continue;
+      size_t ls = text.rfind('\n', a);
+      ls = ls == std::string::npos ? 0 : ls + 1;
+      size_t le = text.find('\n', a);
+      std::string line = text.substr(ls, (le == std::string::npos ? text.size() : le) - ls);
+      if (line.size() > 200) line = line.substr(0, 200) + "...";
+      out.push_back({note, line});
+      break;
+    }
   }
   return out;
 }

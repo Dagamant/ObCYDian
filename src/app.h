@@ -36,6 +36,12 @@ void editNote(const std::string& path);
 void viewNote(const std::string& path);
 void openTools();
 void openBluetooth();
+void openWifi();
+// Text prompt screen; `done` runs after the prompt closes with the entered text.
+void prompt(const std::string& title, const std::string& hint, const std::string& initial, bool secret,
+            std::function<void(const std::string&)> done);
+// True when a keyboard (Bluetooth or the serial console) can type.
+bool keyboardAvailable();
 // Quick switcher / name prompt. `dir` is where new notes go; `path` is the note to rename.
 void openSwitcher(SwitcherMode mode, const std::string& dir, const std::string& path = "");
 // Closes the switcher and opens `path` (in the editor if `edit`).
@@ -47,6 +53,9 @@ void home();
 // Keep navigation history consistent after a note is renamed or deleted.
 void notePathChanged(const std::string& from, const std::string& to);
 void noteDeleted(const std::string& path);
+// A note was created or changed outside the device UI (e.g. from the web page): refresh
+// whatever is on screen if it shows that note or its folder.
+void externalChange(const std::string& path);
 
 void redraw();
 void toast(const std::string& msg, uint32_t ms = 2000);

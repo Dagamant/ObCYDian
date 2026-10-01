@@ -4,6 +4,8 @@
 #include <Preferences.h>
 
 #include <atomic>
+
+#include "radio.h"
 #include <mutex>
 
 namespace btkbd {
@@ -524,10 +526,7 @@ void handleMouse(const MouseLayout& L, const uint8_t* d, size_t len) {
 // ---------------------------------------------------------------------------
 
 void begin() {
-  Preferences p;
-  p.begin("bt", true);
-  enabled_ = p.getBool("enabled", true);
-  p.end();
+  enabled_ = radio::mode() == radio::Mode::Bluetooth;
   if (!enabled_) {
     state_ = State::Off;
     return;
@@ -543,12 +542,7 @@ void begin() {
 
 bool enabled() { return enabled_; }
 
-void setEnabled(bool on) {
-  Preferences p;
-  p.begin("bt", false);
-  p.putBool("enabled", on);
-  p.end();
-}
+void setEnabled(bool on) { radio::switchTo(on ? radio::Mode::Bluetooth : radio::Mode::Off); }
 
 State state() { return state_; }
 

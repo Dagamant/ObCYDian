@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include "btkbd.h"
 #include "editor.h"
 #include "screens.h"
 
@@ -9,7 +10,7 @@ namespace app {
 
 namespace {
 
-enum class Kind { Folder, Note, Edit, Tools, Switcher, Bluetooth };
+enum class Kind { Folder, Note, Edit, Tools, Switcher, Bluetooth, Wifi, Prompt };
 
 struct Nav {
   Kind kind;
@@ -22,6 +23,8 @@ EditorScreen editor;
 ToolsScreen tools;
 SwitcherScreen switcher;
 BluetoothScreen bluetooth;
+WifiScreen wifi;
+PromptScreen promptScreen;
 
 std::vector<Nav> history;
 Screen* current = nullptr;
@@ -67,6 +70,12 @@ void show() {
       break;
     case Kind::Bluetooth:
       current = &bluetooth;
+      break;
+    case Kind::Wifi:
+      current = &wifi;
+      break;
+    case Kind::Prompt:
+      current = &promptScreen;
       break;
   }
   redraw();
@@ -213,6 +222,15 @@ void openFolder(const std::string& dir, int scroll) { push(Kind::Folder, dir, sc
 void openNote(const std::string& path, int scroll) { push(Kind::Note, path, scroll); }
 void openTools() { push(Kind::Tools, "", 0); }
 void openBluetooth() { push(Kind::Bluetooth, "", 0); }
+void openWifi() { push(Kind::Wifi, "", 0); }
+
+void prompt(const std::string& title, const std::string& hint, const std::string& initial, bool secret,
+            std::function<void(const std::string&)> done) {
+  promptScreen.open(title, hint, initial, secret, std::move(done));
+  push(Kind::Prompt, "", 0);
+}
+
+bool keyboardAvailable() { return btkbd::state() == btkbd::State::Connected; }
 
 void editNote(const std::string& path) {
   if (!switchMode(Kind::Note, Kind::Edit, path)) push(Kind::Edit, path, 0);
@@ -284,6 +302,17 @@ void home() {
 void notePathChanged(const std::string& from, const std::string& to) {
   for (auto& n : history)
     if (n.path == from) n.path = to;
+}
+
+void externalChange(const std::string& path) {
+  if (history.empty() || dialog.active) return;
+  const Nav& n = history.back();
+  if ((n.kind == Kind::Note || n.kind == Kind::Edit) && n.path == path) {
+    editor.reloadIfClean();
+  } else if (n.kind == Kind::Folder && storage::parentDir(path) == n.path) {
+    browser.open(n.path, browser.scroll());
+    browser.draw();
+  }
 }
 
 void noteDeleted(const std::string& path) {

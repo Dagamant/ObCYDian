@@ -31,7 +31,7 @@ struct Found {
 // Starts the Bluetooth stack and task if Bluetooth is enabled in settings.
 void begin();
 bool enabled();
-// Persists the setting; takes effect after restart (radios are switched at boot).
+// Switches the radio mode (Bluetooth / off) and restarts.
 void setEnabled(bool on);
 
 State state();

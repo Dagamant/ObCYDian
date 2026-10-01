@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CYD Notes</title>
+<style>
+:root{--bg:#1e1e1e;--side:#262626;--bar:#2b2b2b;--border:#3a3a3a;--text:#dadada;--bright:#f2f2f2;--muted:#999;--faint:#666;--accent:#a88bfa;--accent-dim:#6f5fa8;--accent-bg:#3b3159;--code-bg:#2d2d2d;--code:#e8a87c;--mark:#6b5a14;--danger:#c0392b}
+@media (prefers-color-scheme:light){:root{--bg:#fff;--side:#f6f6f6;--bar:#efefef;--border:#ddd;--text:#222;--bright:#000;--muted:#666;--faint:#999;--accent:#7c5cf0;--accent-dim:#a99be0;--accent-bg:#ebe5ff;--code-bg:#f2f2f2;--code:#b4541c;--mark:#fff3a3}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif}
+header{position:fixed;top:0;left:0;right:0;height:48px;display:flex;align-items:center;gap:8px;padding:0 10px;background:var(--bar);border-bottom:1px solid var(--border);z-index:5}
+header .brand{font-weight:700;color:var(--bright);margin-right:6px;white-space:nowrap}
+header input{flex:1;min-width:60px;max-width:360px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font:inherit;font-size:14px}
+button{background:var(--border);color:var(--bright);border:0;border-radius:6px;padding:7px 12px;font:inherit;font-size:14px;cursor:pointer}
+button:hover{filter:brightness(1.15)}
+button.primary{background:var(--accent-bg);color:var(--bright)}
+button.danger{background:var(--danger);color:#fff}
+button.icon{background:transparent;font-size:18px;padding:6px 8px}
+.spacer{flex:1}
+#app{display:flex;height:100%;padding-top:48px}
+nav{width:280px;flex:none;background:var(--side);border-right:1px solid var(--border);overflow:auto;padding:8px 6px 40px}
+nav a,nav summary{display:block;padding:3px 8px;border-radius:5px;color:var(--text);text-decoration:none;font-size:14px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+nav a:hover,nav summary:hover{background:var(--border)}
+nav a.active{background:var(--accent-bg);color:var(--bright)}
+nav details>div{padding-left:12px;border-left:1px solid var(--border);margin-left:12px}
+nav summary{list-style:none;color:var(--muted)}
+nav summary::before{content:"\25B8";display:inline-block;width:14px;transition:transform .1s}
+nav details[open]>summary::before{transform:rotate(90deg)}
+nav .hint{color:var(--faint);font-size:12px;padding:2px 8px}
+main{flex:1;overflow:auto;padding:24px clamp(16px,5vw,60px) 80px}
+.page{max-width:760px;margin:0 auto}
+.head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.head h1{flex:1;margin:0;font-size:30px;color:var(--bright);line-height:1.2;word-break:break-word}
+.crumb{color:var(--faint);font-size:13px;margin:4px 0 18px}
+.md h1,.md h2,.md h3,.md h4,.md h5,.md h6{color:var(--bright);line-height:1.25;margin:1.3em 0 .5em}
+.md h1{font-size:1.8em}.md h2{font-size:1.45em}.md h3{font-size:1.2em}.md h4,.md h5,.md h6{font-size:1em;color:var(--muted)}
+.md p{margin:.6em 0}
+.md a{color:var(--accent);text-decoration:none}
+.md a:hover{text-decoration:underline}
+.md a.unresolved{color:var(--accent-dim)}
+.md code{background:var(--code-bg);color:var(--code);padding:1px 5px;border-radius:4px;font:0.9em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.md pre{background:var(--code-bg);padding:12px 14px;border-radius:6px;overflow:auto}
+.md pre code{background:none;color:var(--text);padding:0}
+.md blockquote{margin:.8em 0;padding:2px 0 2px 16px;border-left:3px solid #7f6df2;color:var(--text)}
+.md mark{background:var(--mark);color:var(--bright);padding:0 2px;border-radius:3px}
+.md .tag{background:var(--accent-bg);color:var(--accent);padding:1px 7px;border-radius:10px;font-size:.9em}
+.md hr{border:0;border-top:1px solid var(--border);margin:1.5em 0}
+.md ul,.md ol{padding-left:1.6em;margin:.4em 0}
+.md li{margin:.15em 0}
+.md li.task{list-style:none;margin-left:-1.3em}
+.md li.task input{margin-right:8px;accent-color:var(--accent);transform:translateY(1px)}
+.md li.done>span{text-decoration:line-through;color:var(--muted)}
+.md table{border-collapse:collapse;margin:1em 0;display:block;overflow:auto}
+.md th,.md td{border:1px solid var(--border);padding:5px 10px}
+.md th{background:var(--side)}
+.md img{max-width:100%;border-radius:4px}
+.callout{border-left:4px solid var(--c);background:color-mix(in srgb,var(--c) 10%,transparent);padding:8px 14px;border-radius:6px;margin:1em 0}
+.callout-title{font-weight:700;color:var(--c)}
+.props{background:var(--side);border-radius:6px;padding:8px 14px;font-size:14px;margin-bottom:1em}
+.props td{padding:2px 14px 2px 0;vertical-align:top}.props td:first-child{color:var(--muted)}
+.backlinks{margin-top:3em;border-top:1px solid var(--border);padding-top:10px}
+.backlinks h3{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.backlinks a{color:var(--accent);text-decoration:none;font-weight:600}
+.backlinks div{margin:8px 0;font-size:14px}.backlinks .ctx{color:var(--muted);display:block}
+.page.wide{max-width:1500px}
+.toolbar{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 8px;position:sticky;top:-24px;background:var(--bg);padding:6px 0;z-index:2}
+.toolbar button{padding:5px 9px;min-width:34px;font-size:14px;background:var(--side);color:var(--text)}
+.toolbar .sep{width:1px;background:var(--border);margin:2px 4px}
+.editwrap{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+.editwrap .preview{border-left:1px solid var(--border);padding-left:20px;overflow:auto;max-height:calc(100vh - 200px);position:sticky;top:40px}
+.editwrap.nopreview{grid-template-columns:1fr}.editwrap.nopreview .preview{display:none}
+#ac{position:absolute;z-index:8;background:var(--side);border:1px solid var(--border);border-radius:6px;box-shadow:0 6px 20px #0006;min-width:220px;max-width:340px;padding:4px;display:none}
+#ac div{padding:5px 10px;border-radius:4px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
+#ac div.sel{background:var(--accent-bg);color:var(--bright)}
+#ac small{color:var(--muted);margin-left:8px}
+textarea{width:100%;min-height:calc(100vh - 220px);background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:14px;font:15px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical;tab-size:4}
+.status{color:var(--muted);font-size:13px}
+.card{background:var(--side);border-radius:8px;padding:14px 18px;margin:14px 0}
+.card label{display:block;font-size:13px;color:var(--muted);margin:10px 0 3px}
+.card input{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font:inherit}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--border);color:var(--bright);padding:9px 18px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
+#toast.show{opacity:1}
+.empty{color:var(--muted);text-align:center;margin-top:20vh}
+.only-narrow{display:none}
+#menu{display:none}
+@media (max-width:760px){
+ #menu{display:inline-block}
+ nav{position:fixed;top:48px;bottom:0;left:0;z-index:4;transform:translateX(-100%);transition:transform .15s;width:min(85vw,320px)}
+ body.side nav{transform:none}
+ header .brand{display:none}
+ .only-narrow{display:inline-block}
+ .editwrap{grid-template-columns:1fr}
+ .editwrap .preview{display:none;border:0;padding:0;max-height:none;position:static}
+ .editwrap.showpreview .preview{display:block}.editwrap.showpreview textarea{display:none}
+ .head h1{font-size:24px}
+}
+</style>
+</head>
+<body>
+<header>
+  <button class="icon" id="menu" title="Files">&#9776;</button>
+  <span class="brand">CYD Notes</span>
+  <input id="search" type="search" placeholder="Search notes..." autocomplete="off">
+  <span class="spacer"></span>
+  <button class="primary" id="new" title="New note">+ New</button>
+  <button class="icon" id="settings" title="Device &amp; WiFi">&#9881;</button>
+</header>
+<div id="app">
+  <nav id="side"></nav>
+  <main id="main"><div class="page"><p class="empty">Loading...</p></div></main>
+</div>
+<div id="toast"></div>
+<div id="ac"></div>
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+let notes = [], folders = [], current = null, source = "", editing = false, dirty = false;
+const openFolders = new Set(JSON.parse(localStorage.getItem("openFolders") || "[]"));
+
+// ---------------------------------------------------------------- utilities
+const esc = s => s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const dirOf = p => p.slice(0, p.lastIndexOf("/"));
+const baseName = p => p.slice(p.lastIndexOf("/") + 1).replace(/\.md$/i, "");
+const slug = s => s.toLowerCase().replace(/<[^>]+>/g, "").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "");
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2200); }
+async function api(method, url, body) {
+  const r = await fetch(url, {method, body, headers: body !== undefined ? {"Content-Type": "text/plain; charset=utf-8"} : {}});
+  if (!r.ok) { let m = r.statusText; try { m = (await r.json()).error || m; } catch (e) {} throw new Error(m); }
+  return r;
+}
+const notePath = p => "/api/note?path=" + encodeURIComponent(p);
+
+// ---------------------------------------------------------------- link resolution (same rules as the device)
+function resolve(target, from) {
+  target = target.trim();
+  if (!target) return from;
+  let t = /\.md$/i.test(target) ? target : target + ".md";
+  const lc = s => s.toLowerCase();
+  if (t.includes("/")) {
+    const abs = t.startsWith("/") ? t : dirOf(from) + "/" + t, parts = [];
+    for (const seg of abs.split("/")) { if (seg === "..") parts.pop(); else if (seg && seg !== ".") parts.push(seg); }
+    const norm = "/" + parts.join("/");
+    const exact = notes.find(n => lc(n) === lc(norm));
+    if (exact) return exact;
+    const suf = lc(t.startsWith("/") ? t : "/" + t);
+    return notes.find(n => lc(n).endsWith(suf)) || null;
+  }
+  const same = lc(dirOf(from) + "/" + t);
+  let best = null;
+  for (const n of notes) {
+    if (lc(n) === same) return n;
+    if (lc(n).endsWith("/" + lc(t)) && (!best || n.length < best.length)) best = n;
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------- markdown rendering
+const CALLOUTS = {note:"#027aff",info:"#027aff",todo:"#027aff",abstract:"#00bfbc",summary:"#00bfbc",tldr:"#00bfbc",tip:"#08b94e",hint:"#08b94e",important:"#08b94e",success:"#08b94e",check:"#08b94e",done:"#08b94e",question:"#ec7500",help:"#ec7500",faq:"#ec7500",warning:"#e9973f",caution:"#e9973f",attention:"#e9973f",failure:"#e93147",fail:"#e93147",missing:"#e93147",danger:"#e93147",error:"#e93147",bug:"#e93147",example:"#7852ee",quote:"#9e9e9e",cite:"#9e9e9e"};
+const IMG = /\.(png|jpe?g|gif|svg|webp)$/i;
+
+function inline(s, from) {
+  const ph = [], keep = h => "\u0000" + (ph.push(h) - 1) + "\u0000";
+  s = s.replace(/\\([\\`*_{}\[\]()#+\-.!~=|])/g, (_, c) => keep(esc(c)));
+  s = s.replace(/`([^`]+)`/g, (_, c) => keep("<code>" + esc(c) + "</code>"));
+  s = s.replace(/(!?)\[\[([^\]]+?)\]\]/g, (_, bang, inner) => keep(wikilink(inner, !!bang, from)));
+  s = s.replace(/(!?)\[([^\]]*)\]\(([^)\s]+)\)/g, (_, bang, text, url) => keep(mdlink(text, url, !!bang, from)));
+  s = s.replace(/\bhttps?:\/\/[^\s<>()]+/g, u => keep('<a href="' + esc(u) + '" target="_blank" rel="noopener">' + esc(u) + "</a>"));
+  s = esc(s);
+  s = s.replace(/\*\*\*(?=\S)(.+?)\*\*\*/g, "<b><i>$1</i></b>")
+       .replace(/\*\*(?=\S)(.+?)\*\*/g, "<b>$1</b>").replace(/__(?=\S)(.+?)__/g, "<b>$1</b>")
+       .replace(/(^|[^*\w])\*(?=\S)(.+?)\*(?!\*)/g, "$1<i>$2</i>").replace(/(^|\W)_(?=\S)(.+?)_(?!\w)/g, "$1<i>$2</i>")
+       .replace(/~~(.+?)~~/g, "<s>$1</s>").replace(/==(.+?)==/g, "<mark>$1</mark>")
+       .replace(/(^|\s)#([A-Za-z_][\w\-\/]*)/g, '$1<span class="tag">#$2</span>');
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => ph[+i]);
+}
+
+function linkHtml(target, heading, display, from) {
+  const p = resolve(target, from);
+  const href = "#" + encodeURI(p || target) + (heading ? "?h=" + encodeURIComponent(heading) : "");
+  return '<a class="internal' + (p ? "" : " unresolved") + '" href="' + esc(href) + '" data-target="' + esc(target) + '">' + esc(display) + "</a>";
+}
+
+function wikilink(inner, embed, from) {
+  let [target, alias] = inner.split("|");
+  let heading = "";
+  if (target.includes("#")) [target, heading] = [target.slice(0, target.indexOf("#")), target.slice(target.indexOf("#") + 1)];
+  if (embed && IMG.test(target)) {
+    const local = (target.includes("/") ? "/" + target.replace(/^\//, "") : dirOf(from) + "/" + target);
+    return '<img src="/api/file?path=' + encodeURIComponent(local) + '" alt="' + esc(target) + '" onerror="if(!this.dataset.f){this.dataset.f=1;this.src=\'/api/file?path=\'+encodeURIComponent(\'/' + esc(target.split("/").pop()) + '\')}"' + (alias && /^\d+$/.test(alias) ? ' width="' + alias + '"' : "") + ">";
+  }
+  const display = alias || (target ? target : "") + (heading ? (target ? " > " : "") + heading : "");
+  return linkHtml(target, heading, display, from);
+}
+
+function mdlink(text, url, image, from) {
+  if (/^[a-z]+:/i.test(url)) {
+    if (image) return '<img src="' + esc(url) + '" alt="' + esc(text) + '">';
+    return '<a href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(text || url) + "</a>";
+  }
+  let target = decodeURIComponent(url), heading = "";
+  if (target.includes("#")) [target, heading] = [target.slice(0, target.indexOf("#")), target.slice(target.indexOf("#") + 1)];
+  if (image || IMG.test(target)) {
+    const p = target.startsWith("/") ? target : dirOf(from) + "/" + target;
+    return '<img src="/api/file?path=' + encodeURIComponent(p) + '" alt="' + esc(text) + '">';
+  }
+  return linkHtml(target, heading, text || target, from);
+}
+
+const RE = {
+  fence: /^\s*(```|~~~)(.*)$/,
+  heading: /^(#{1,6})\s+(.*?)\s*#*\s*$/,
+  hr: /^ {0,3}([-*_])( *\1){2,} *$/,
+  item: /^(\s*)([-*+]|\d+[.)])\s+(.*)$/,
+  quote: /^\s*>/,
+  tableSep: /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/,
+};
+const indentOf = s => { let w = 0; for (const c of s) { if (c === "\t") w += 4; else if (c === " ") w++; else break; } return w; };
+const splitRow = l => l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim());
+
+// Renders lines[0..] -> HTML. `base` is the line number of lines[0] in the note (for task toggles).
+function renderBlocks(lines, from, base) {
+  let out = "", i = 0;
+  const startsBlock = (l, next) => RE.fence.test(l) || RE.heading.test(l) || RE.hr.test(l) || RE.item.test(l) || RE.quote.test(l) || (l.includes("|") && next !== undefined && RE.tableSep.test(next));
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+    let m;
+    if ((m = line.match(RE.fence))) {
+      const fence = m[1], lang = m[2].trim(), code = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith(fence)) code.push(lines[i++]);
+      i++;
+      out += '<pre><code' + (lang ? ' class="language-' + esc(lang) + '"' : "") + ">" + esc(code.join("\n")) + "</code></pre>";
+    } else if ((m = line.match(RE.heading))) {
+      const n = m[1].length, h = inline(m[2], from);
+      out += "<h" + n + ' id="' + slug(m[2]) + '">' + h + "</h" + n + ">";
+      i++;
+    } else if (RE.hr.test(line)) {
+      out += "<hr>";
+      i++;
+    } else if (RE.quote.test(line)) {
+      const inner = [];
+      const start = i;
+      while (i < lines.length && RE.quote.test(lines[i])) inner.push(lines[i++].replace(/^\s*> ?/, ""));
+      const c = inner[0].match(/^\[!(\w+)\]([+-]?)\s*(.*)$/);
+      if (c) {
+        const type = c[1].toLowerCase(), title = c[3] || c[1][0].toUpperCase() + c[1].slice(1).toLowerCase();
+        out += '<div class="callout" style="--c:' + (CALLOUTS[type] || CALLOUTS.note) + '"><div class="callout-title">' + inline(title, from) + "</div>" + renderBlocks(inner.slice(1), from, base + start + 1) + "</div>";
+      } else {
+        out += "<blockquote>" + renderBlocks(inner, from, base + start) + "</blockquote>";
+      }
+    } else if (RE.item.test(line)) {
+      out += renderList(lines, i, from, base, n => (i = n));
+    } else if (line.includes("|") && i + 1 < lines.length && RE.tableSep.test(lines[i + 1])) {
+      const head = splitRow(line), align = splitRow(lines[i + 1]).map(c => c.endsWith(":") ? (c.startsWith(":") ? "center" : "right") : "");
+      out += "<table><thead><tr>" + head.map((c, k) => '<th style="text-align:' + (align[k] || "left") + '">' + inline(c, from) + "</th>").join("") + "</tr></thead><tbody>";
+      i += 2;
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
+        out += "<tr>" + splitRow(lines[i]).map((c, k) => '<td style="text-align:' + (align[k] || "left") + '">' + inline(c, from) + "</td>").join("") + "</tr>";
+        i++;
+      }
+      out += "</tbody></table>";
+    } else {
+      const para = [];
+      while (i < lines.length && lines[i].trim() && !(para.length && startsBlock(lines[i], lines[i + 1]))) para.push(lines[i++]);
+      out += "<p>" + para.map(l => inline(l.trim(), from)).join("<br>") + "</p>";
+    }
+  }
+  return out;
+}
+
+function renderList(lines, i, from, base, done) {
+  let html = "";
+  const stack = [];
+  while (i < lines.length) {
+    const line = lines[i];
+    const m = line.match(RE.item);
+    if (!m) {
+      if (line.trim() && indentOf(line) > 0 && stack.length) { html += "<br>" + inline(line.trim(), from); i++; continue; }
+      break;
+    }
+    const indent = indentOf(m[1]), ordered = /\d/.test(m[2]);
+    while (stack.length && indent < stack[stack.length - 1].indent) html += "</li></" + stack.pop().tag + ">";
+    // Same level but bullets <-> numbers: start a new list
+    if (stack.length && indent === stack[stack.length - 1].indent && (ordered ? "ol" : "ul") !== stack[stack.length - 1].tag)
+      html += "</li></" + stack.pop().tag + ">";
+    const top = stack[stack.length - 1];
+    if (!top || indent > top.indent) {
+      const tag = ordered ? "ol" : "ul";
+      html += "<" + tag + (ordered && parseInt(m[2]) !== 1 ? ' start="' + parseInt(m[2]) + '"' : "") + ">";
+      stack.push({indent, tag});
+    } else html += "</li>";
+    const task = m[3].match(/^\[([ xX])\]\s*(.*)$/);
+    if (task) {
+      const checked = task[1] !== " ";
+      html += '<li class="task' + (checked ? " done" : "") + '"><input type="checkbox" data-line="' + (base + i) + '"' + (checked ? " checked" : "") + "><span>" + inline(task[2], from) + "</span>";
+    } else html += "<li>" + inline(m[3], from);
+    i++;
+  }
+  while (stack.length) html += "</li></" + stack.pop().tag + ">";
+  done(i);
+  return html;
+}
+
+function render(src, from) {
+  const lines = src.replace(/\r/g, "").split("\n");
+  let out = "", start = 0;
+  if (lines[0] === "---") {
+    const end = lines.indexOf("---", 1);
+    if (end > 0) {
+      out += '<table class="props">' + lines.slice(1, end).filter(l => l.trim()).map(l => {
+        const k = l.indexOf(":");
+        return k > 0 && !/^\s/.test(l) ? "<tr><td>" + esc(l.slice(0, k)) + "</td><td>" + inline(l.slice(k + 1).trim(), from) + "</td></tr>" : '<tr><td></td><td>' + esc(l.trim()) + "</td></tr>";
+      }).join("") + "</table>";
+      start = end + 1;
+    }
+  }
+  return out + renderBlocks(lines.slice(start), from, start);
+}
+
+// ---------------------------------------------------------------- file tree
+function buildTree() {
+  const root = {dirs: {}, notes: []};
+  const dirNode = path => path.split("/").filter(Boolean).reduce((n, seg) => n.dirs[seg] || (n.dirs[seg] = {dirs: {}, notes: []}), root);
+  folders.forEach(dirNode);
+  notes.forEach(n => dirNode(dirOf(n)).notes.push(n));
+  return root;
+}
+
+function treeHtml(node, prefix) {
+  let h = "";
+  for (const name of Object.keys(node.dirs).sort((a, b) => a.localeCompare(b, undefined, {sensitivity: "base"}))) {
+    const path = prefix + "/" + name;
+    h += "<details data-dir=\"" + esc(path) + "\"" + (openFolders.has(path) ? " open" : "") + "><summary>" + esc(name) + "</summary><div>" + treeHtml(node.dirs[name], path) + "</div></details>";
+  }
+  for (const n of node.notes.sort((a, b) => baseName(a).localeCompare(baseName(b), undefined, {sensitivity: "base"})))
+    h += '<a href="#' + esc(encodeURI(n)) + '"' + (n === current ? ' class="active"' : "") + ">" + esc(baseName(n)) + "</a>";
+  return h;
+}
+
+function drawSide() {
+  const q = $("#search").value.trim().toLowerCase();
+  const side = $("#side");
+  if (q) {
+    const hits = notes.filter(n => n.toLowerCase().includes(q)).sort((a, b) => baseName(a).toLowerCase().indexOf(q) - baseName(b).toLowerCase().indexOf(q));
+    side.innerHTML = hits.map(n => '<a href="#' + esc(encodeURI(n)) + '" title="' + esc(n) + '">' + esc(baseName(n)) + (dirOf(n) ? ' <span class="hint">' + esc(dirOf(n).slice(1)) + "</span>" : "") + "</a>").join("") || '<div class="hint">No matches. Press Enter to create "' + esc(q) + '".</div>';
+  } else {
+    side.innerHTML = treeHtml(buildTree(), "") || '<div class="hint">No notes yet</div>';
+  }
+  side.querySelectorAll("details").forEach(d => d.addEventListener("toggle", () => {
+    d.open ? openFolders.add(d.dataset.dir) : openFolders.delete(d.dataset.dir);
+    localStorage.setItem("openFolders", JSON.stringify([...openFolders]));
+  }));
+}
+
+async function loadTree() {
+  const t = await (await api("GET", "/api/tree")).json();
+  notes = t.notes;
+  folders = t.folders;
+  drawSide();
+}
+
+// ---------------------------------------------------------------- views
+function confirmLeave() { return !dirty || confirm("Discard unsaved changes?"); }
+
+async function openNote(path, heading) {
+  const main = $("#main");
+  try {
+    source = await (await api("GET", notePath(path))).text();
+  } catch (e) {
+    main.innerHTML = '<div class="page"><p class="empty">' + esc(e.message) + "</p></div>";
+    return;
+  }
+  current = path;
+  editing = false;
+  dirty = false;
+  drawSide();
+  showNote();
+  if (heading) { const el = document.getElementById(slug(heading)); if (el) el.scrollIntoView(); }
+  else main.scrollTop = 0;
+  document.title = baseName(path) + " - CYD Notes";
+  document.body.classList.remove("side");
+  loadBacklinks(path);
+}
+
+function headHtml(buttons) {
+  return '<div class="head"><h1>' + esc(baseName(current)) + "</h1>" + buttons + '</div><div class="crumb">' + esc(dirOf(current).slice(1).replace(/\//g, " / ") || "Vault") + "</div>";
+}
+
+function showNote() {
+  $("#main").innerHTML = '<div class="page">' + headHtml('<button id="edit" class="primary">Edit</button><button id="rename">Rename</button><button id="del" class="danger">Delete</button>') + '<article class="md">' + (source.trim() ? render(source, current) : '<p class="status">This note is empty. Click Edit to write something.</p>') + '</article><section class="backlinks" id="backlinks"></section></div>';
+  $("#edit").onclick = showEditor;
+  $("#rename").onclick = renameNote;
+  $("#del").onclick = deleteNote;
+}
+
+async function loadBacklinks(path) {
+  try {
+    const list = await (await api("GET", "/api/backlinks?path=" + encodeURIComponent(path))).json();
+    const el = $("#backlinks");
+    if (!el || current !== path) return;
+    el.innerHTML = "<h3>Linked mentions (" + list.length + ")</h3>" + (list.length ? list.map(b => '<div><a href="#' + esc(encodeURI(b.path)) + '">' + esc(baseName(b.path)) + '</a><span class="ctx">' + inline(b.line.trim(), b.path) + "</span></div>").join("") : '<div class="status">No other notes link here yet.</div>');
+  } catch (e) {}
+}
+
+// ---------------------------------------------------------------- editor
+const TOOLS = [
+  ["B", "Bold (Ctrl+B)", () => wrap("**")], ["I", "Italic (Ctrl+I)", () => wrap("*")],
+  ["S", "Strikethrough", () => wrap("~~")], ["H", "Highlight", () => wrap("==")], null,
+  ["H#", "Heading (cycle)", () => cycleHeading()], ["&bull;", "Bulleted list", () => togglePrefix("- ")],
+  ["1.", "Numbered list", () => togglePrefix("1. ")], ["&#9745;", "Task (Ctrl+L)", () => togglePrefix("- [ ] ")],
+  ["&rdquo;", "Quote", () => togglePrefix("> ")], null,
+  ["[[ ]]", "Link to note (Ctrl+K)", () => wrap("[[", "]]")], ["&lt;/&gt;", "Code", () => codeCmd()],
+  ["&mdash;", "Horizontal rule", () => insertBlock("---")],
+];
+
+function showEditor() {
+  editing = true;
+  const wide = innerWidth > 760;
+  $("#main").innerHTML = '<div class="page wide">' + headHtml('<span class="status" id="st">Saved</span><button id="pv">' + (wide ? "Hide preview" : "Preview") + '</button><button id="save" class="primary">Save</button><button id="done">Done</button>') +
+    '<div class="toolbar">' + TOOLS.map((t, i) => t ? '<button data-t="' + i + '" title="' + t[1] + '">' + t[0] + "</button>" : '<span class="sep"></span>').join("") + "</div>" +
+    '<div class="editwrap" id="ew"><textarea id="ta" spellcheck="true"></textarea><div class="md preview" id="preview"></div></div></div>';
+  const ta = $("#ta"), ew = $("#ew");
+  ta.value = source;
+  ta.focus();
+  ta.setSelectionRange(0, 0);
+  updatePreview();
+  document.querySelectorAll(".toolbar button").forEach(b => b.onmousedown = e => { e.preventDefault(); TOOLS[b.dataset.t][2](); });
+  $("#pv").onclick = () => {
+    if (innerWidth > 760) { ew.classList.toggle("nopreview"); $("#pv").textContent = ew.classList.contains("nopreview") ? "Show preview" : "Hide preview"; }
+    else { ew.classList.toggle("showpreview"); $("#pv").textContent = ew.classList.contains("showpreview") ? "Write" : "Preview"; }
+    updatePreview();
+  };
+  ta.oninput = () => { markDirty(); schedulePreview(); autocomplete(); };
+  ta.onkeydown = editorKey;
+  ta.onclick = () => hideAc();
+  ta.onblur = () => setTimeout(hideAc, 150);
+  ta.onscroll = () => { const pv = $("#preview"); pv.scrollTop = (ta.scrollTop / Math.max(1, ta.scrollHeight - ta.clientHeight)) * (pv.scrollHeight - pv.clientHeight); };
+  $("#save").onclick = save;
+  $("#done").onclick = finishEditing;
+}
+
+async function finishEditing() {
+  hideAc();
+  if (dirty && !(await save())) return;
+  editing = false;
+  showNote();
+  loadBacklinks(current);
+}
+
+function markDirty() { dirty = true; const st = $("#st"); if (st) st.textContent = "Unsaved changes"; }
+let previewTimer = 0;
+function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(updatePreview, 250); }
+function updatePreview() { const pv = $("#preview"); if (pv && pv.offsetParent !== null) pv.innerHTML = render($("#ta").value, current); }
+
+// Replace [a, b) with text through execCommand so the browser's undo history keeps working.
+function replaceRange(a, b, text, selA, selB) {
+  const ta = $("#ta");
+  ta.focus();
+  ta.setSelectionRange(a, b);
+  if (!document.execCommand("insertText", false, text)) ta.setRangeText(text, a, b, "end");
+  if (selA !== undefined) ta.setSelectionRange(selA, selB === undefined ? selA : selB);
+  markDirty();
+  schedulePreview();
+}
+
+function wrap(before, after = before) {
+  const ta = $("#ta"), v = ta.value, a = ta.selectionStart, b = ta.selectionEnd, sel = v.slice(a, b);
+  if (v.slice(a - before.length, a) === before && v.slice(b, b + after.length) === after)  // unwrap
+    return replaceRange(a - before.length, b + after.length, sel, a - before.length, b - before.length);
+  replaceRange(a, b, before + sel + after, a + before.length, a + before.length + sel.length);
+}
+
+function lineBounds() {
+  const ta = $("#ta"), v = ta.value;
+  const a = v.lastIndexOf("\n", ta.selectionStart - 1) + 1;
+  let b = v.indexOf("\n", ta.selectionEnd - (ta.selectionEnd > ta.selectionStart && v[ta.selectionEnd - 1] === "\n" ? 1 : 0));
+  if (b < 0) b = v.length;
+  return [a, b];
+}
+
+function editLines(fn) {
+  const ta = $("#ta"), [a, b] = lineBounds();
+  const lines = ta.value.slice(a, b).split("\n").map(fn);
+  const text = lines.join("\n");
+  replaceRange(a, b, text, a + text.length);
+}
+
+const PREFIX = /^(\s*)((?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?|> ?|#{1,6} )?/;
+function togglePrefix(p) {
+  const ta = $("#ta"), [a, b] = lineBounds();
+  const all = ta.value.slice(a, b).split("\n").every(l => l.replace(/^\s*/, "").startsWith(p.trim()));
+  let n = 0;
+  editLines(l => {
+    const m = l.match(PREFIX), rest = l.slice(m[0].length);
+    if (all) return m[1] + rest;
+    const pre = p === "1. " ? (++n) + ". " : p;
+    return m[1] + pre + rest;
+  });
+}
+
+function cycleHeading() {
+  editLines(l => {
+    const m = l.match(/^(#{1,6}) /);
+    const level = m ? m[1].length : 0, rest = m ? l.slice(m[0].length) : l;
+    return level >= 3 ? rest : "#".repeat(level + 1) + " " + rest;
+  });
+}
+
+function codeCmd() {
+  const ta = $("#ta"), v = ta.value, a = ta.selectionStart, b = ta.selectionEnd;
+  if (v.slice(a, b).includes("\n") || a === b && v.slice(v.lastIndexOf("\n", a - 1) + 1, a).trim() === "") {
+    const sel = v.slice(a, b);
+    return replaceRange(a, b, "```\n" + sel + "\n```", a + 4, a + 4 + sel.length);
+  }
+  wrap("`");
+}
+
+function insertBlock(text) {
+  const ta = $("#ta"), v = ta.value, a = ta.selectionStart;
+  const pre = a > 0 && v[a - 1] !== "\n" ? "\n" : "";
+  replaceRange(a, ta.selectionEnd, pre + text + "\n", a + pre.length + text.length + 1);
+}
+
+function editorKey(e) {
+  const ta = e.target, mod = e.ctrlKey || e.metaKey;
+  if (acOpen()) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); return moveAc(e.key === "ArrowDown" ? 1 : -1); }
+    if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); return acceptAc(); }
+    if (e.key === "Escape") { e.preventDefault(); return hideAc(); }
+  }
+  if (mod && !e.altKey) {
+    const k = e.key.toLowerCase();
+    const map = {s: save, b: () => wrap("**"), i: () => wrap("*"), k: () => wrap("[[", "]]"), l: () => togglePrefix("- [ ] "), e: finishEditing};
+    if (map[k]) { e.preventDefault(); return map[k](); }
+  }
+  if (e.key === "Tab") {
+    e.preventDefault();
+    const [a, b] = lineBounds(), multi = ta.value.slice(ta.selectionStart, ta.selectionEnd).includes("\n");
+    const isList = PREFIX.exec(ta.value.slice(a, b))[2];
+    if (e.shiftKey) return editLines(l => l.replace(/^(\t| {1,4})/, ""));
+    if (multi || (isList && !/^>/.test(isList))) return editLines(l => "\t" + l);
+    return replaceRange(ta.selectionStart, ta.selectionEnd, "\t", ta.selectionStart + 1);
+  }
+  if (e.key === "Enter" && !e.shiftKey && !mod && ta.selectionStart === ta.selectionEnd) {
+    const v = ta.value, c = ta.selectionStart, ls = v.lastIndexOf("\n", c - 1) + 1, line = v.slice(ls, c);
+    const m = line.match(/^(\s*)((?:>\s?)*)((?:[-*+]|(\d+)([.)])) (?:\[[ xX]\] )?)?/);
+    const prefixLen = m[0].length;
+    if (!m[2] && !m[3]) return;  // plain line: default Enter
+    e.preventDefault();
+    if (line.slice(prefixLen).trim() === "" && v.slice(c, v.indexOf("\n", c) < 0 ? v.length : v.indexOf("\n", c)).trim() === "") {
+      // Empty item: outdent, or end the list / quote
+      if (m[3] && m[1]) return replaceRange(ls, ls + (line[0] === "\t" ? 1 : Math.min(4, m[1].length)), "", c - (line[0] === "\t" ? 1 : Math.min(4, m[1].length)));
+      return replaceRange(ls, c, "", ls);
+    }
+    let next = m[3] || "";
+    if (m[4]) next = (+m[4] + 1) + m[5] + " " + (/\[[ xX]\]/.test(next) ? "[ ] " : "");
+    else if (/\[[ xX]\]/.test(next)) next = next.replace(/\[[ xX]\]/, "[ ]");
+    const ins = "\n" + m[1] + m[2] + next;
+    return replaceRange(c, c, ins, c + ins.length);
+  }
+}
+
+// ---- [[ link autocomplete
+let acItems = [], acSel = 0, acStart = 0;
+const acOpen = () => $("#ac").style.display === "block";
+function hideAc() { $("#ac").style.display = "none"; }
+
+function linkText(p) {
+  const name = baseName(p);
+  return notes.filter(n => baseName(n).toLowerCase() === name.toLowerCase()).length > 1 ? p.slice(1).replace(/\.md$/i, "") : name;
+}
+
+function autocomplete() {
+  const ta = $("#ta"), c = ta.selectionStart, before = ta.value.slice(0, c);
+  const m = before.match(/\[\[([^\]|#\n]{0,60})$/);
+  if (!m) return hideAc();
+  const q = m[1].toLowerCase();
+  acStart = c - m[1].length;
+  const score = n => { const b = baseName(n).toLowerCase(); return b.startsWith(q) ? 0 : b.includes(q) ? 1 : n.toLowerCase().includes(q) ? 2 : 9; };
+  acItems = notes.filter(n => score(n) < 9).sort((a, b) => score(a) - score(b) || a.length - b.length).slice(0, 8);
+  if (!acItems.length) return hideAc();
+  acSel = 0;
+  drawAc();
+  const pos = caretCoords(ta, c), ac = $("#ac");
+  ac.style.display = "block";
+  const r = ta.getBoundingClientRect();
+  let top = r.top + pos.top - ta.scrollTop + 22 + scrollY, left = r.left + pos.left + scrollX;
+  left = Math.min(left, innerWidth - ac.offsetWidth - 10);
+  if (top + ac.offsetHeight > innerHeight + scrollY - 10) top -= ac.offsetHeight + 26;
+  ac.style.top = top + "px";
+  ac.style.left = Math.max(6, left) + "px";
+}
+
+function drawAc() {
+  const ac = $("#ac");
+  ac.innerHTML = acItems.map((n, i) => '<div data-i="' + i + '"' + (i === acSel ? ' class="sel"' : "") + ">" + esc(baseName(n)) + (dirOf(n) ? "<small>" + esc(dirOf(n).slice(1)) + "</small>" : "") + "</div>").join("");
+  ac.querySelectorAll("div").forEach(d => d.onmousedown = e => { e.preventDefault(); acSel = +d.dataset.i; acceptAc(); });
+}
+
+function moveAc(d) { acSel = (acSel + d + acItems.length) % acItems.length; drawAc(); }
+
+function acceptAc() {
+  const ta = $("#ta"), c = ta.selectionStart, name = linkText(acItems[acSel]);
+  const closed = ta.value.slice(c, c + 2) === "]]";
+  replaceRange(acStart, c, name + (closed ? "" : "]]"), acStart + name.length + 2);
+  hideAc();
+}
+
+// Pixel position of a caret index inside a textarea, via an off-screen mirror element.
+function caretCoords(ta, index) {
+  const div = document.createElement("div"), cs = getComputedStyle(ta);
+  for (const p of ["boxSizing", "width", "fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing", "paddingTop", "paddingLeft", "paddingRight", "borderTopWidth", "borderLeftWidth", "tabSize"]) div.style[p] = cs[p];
+  Object.assign(div.style, {position: "absolute", visibility: "hidden", whiteSpace: "pre-wrap", wordWrap: "break-word", top: "0", left: "-9999px"});
+  div.textContent = ta.value.slice(0, index);
+  const span = document.createElement("span");
+  span.textContent = ta.value.slice(index) || ".";
+  div.appendChild(span);
+  document.body.appendChild(div);
+  const out = {top: span.offsetTop, left: span.offsetLeft};
+  div.remove();
+  return out;
+}
+
+async function save() {
+  const text = editing ? $("#ta").value : source;
+  try {
+    await api("PUT", notePath(current), text);
+    source = text;
+    dirty = false;
+    if ($("#st")) $("#st").textContent = "Saved";
+    return true;
+  } catch (e) { toast("Save failed: " + e.message); return false; }
+}
+
+async function createNote(name, edit = true) {
+  name = name.trim().replace(/^\/+/, "");
+  if (!name) return;
+  const path = "/" + name.replace(/\.md$/i, "") + ".md";
+  const existing = notes.find(n => n.toLowerCase() === path.toLowerCase());
+  if (!existing) {
+    try { await api("PUT", notePath(path), ""); } catch (e) { return toast("Couldn't create: " + e.message); }
+    await loadTree();
+  }
+  location.hash = encodeURI(existing || path);
+  if (!existing && edit) setTimeout(() => { if (current === path) showEditor(); }, 400);
+}
+
+async function renameNote() {
+  const name = prompt("Rename or move (use / for folders):", current.slice(1).replace(/\.md$/i, ""));
+  if (!name || !name.trim()) return;
+  const to = "/" + name.trim().replace(/^\/+/, "").replace(/\.md$/i, "") + ".md";
+  if (to === current) return;
+  try {
+    const r = await (await api("POST", "/api/rename?from=" + encodeURIComponent(current) + "&to=" + encodeURIComponent(to))).json();
+    toast(r.links ? "Renamed. Updated " + r.links + " link" + (r.links > 1 ? "s" : "") : "Renamed");
+    await loadTree();
+    location.hash = encodeURI(r.path);
+  } catch (e) { toast(e.message); }
+}
+
+async function deleteNote() {
+  if (!confirm('Delete "' + baseName(current) + '"? This can\'t be undone.')) return;
+  try {
+    await api("DELETE", notePath(current));
+    toast("Deleted");
+    current = null;
+    await loadTree();
+    location.hash = "";
+  } catch (e) { toast(e.message); }
+}
+
+function showHome() {
+  current = null;
+  drawSide();
+  const welcome = notes.find(n => /^\/welcome\.md$/i.test(n));
+  if (welcome) return openNote(welcome);
+  $("#main").innerHTML = '<div class="page"><p class="empty">' + (notes.length ? "Pick a note from the list." : "No notes yet. Click <b>+ New</b> to start.") + "</p></div>";
+}
+
+async function showSettings() {
+  current = null;
+  drawSide();
+  const main = $("#main");
+  let s = {};
+  try { s = await (await api("GET", "/api/status")).json(); } catch (e) {}
+  main.innerHTML = '<div class="page"><div class="head"><h1>Device</h1></div><div class="card">' +
+    "<div><b>Mode:</b> " + esc(s.mode || "?") + "</div><div><b>Network:</b> " + esc(s.ssid || "-") + (s.ap ? " (setup network)" : "") + "</div>" +
+    "<div><b>Address:</b> " + esc(s.ip || "-") + (s.ap ? "" : " &middot; http://cyd-notes.local") + "</div><div><b>Notes:</b> " + (s.notes ?? "?") + (s.card === false ? " (no SD card!)" : "") + '</div><div class="status">Free memory: ' + Math.round((s.heap || 0) / 1024) + " KB</div></div>" +
+    '<div class="card"><b>WiFi network</b><div class="status">The device joins this network at startup. ' + (s.ap ? "After saving, connect this phone/computer to the same network and open http://cyd-notes.local" : "") + "</div>" +
+    '<label>Network name</label><input id="ssid" list="nets" value="' + esc(s.savedSsid || "") + '"><datalist id="nets"></datalist>' +
+    '<label>Password</label><input id="pass" type="password" autocomplete="off">' +
+    '<p><button id="scan">Scan</button> <button id="savewifi" class="primary">Save &amp; connect</button></p></div></div>';
+  $("#scan").onclick = async () => {
+    $("#scan").textContent = "Scanning...";
+    try {
+      const nets = await (await api("GET", "/api/wifi/scan")).json();
+      $("#nets").innerHTML = [...new Set(nets.map(n => n.ssid).filter(Boolean))].map(n => '<option value="' + esc(n) + '">').join("");
+      toast(nets.length + " networks found");
+    } catch (e) { toast(e.message); }
+    $("#scan").textContent = "Scan";
+  };
+  $("#savewifi").onclick = async () => {
+    const body = new URLSearchParams({ssid: $("#ssid").value, pass: $("#pass").value});
+    try {
+      await fetch("/api/wifi", {method: "POST", body});
+      toast("Saved. The device is connecting...");
+    } catch (e) { toast(e.message); }
+  };
+}
+
+// ---------------------------------------------------------------- routing & events
+async function route() {
+  const h = location.hash.slice(1);
+  if (h === "settings") return showSettings();
+  if (!h) return showHome();
+  const [p, query] = h.split("?");
+  const heading = new URLSearchParams(query || "").get("h");
+  const path = decodeURI(p);
+  if (path === current && !editing) {
+    if (heading) { const el = document.getElementById(slug(heading)); if (el) el.scrollIntoView(); }
+    return;
+  }
+  openNote(path, heading);
+}
+
+let lastHash = location.hash;
+window.addEventListener("hashchange", e => {
+  hideAc();
+  if (!confirmLeave()) { history.replaceState(null, "", lastHash || "#"); return; }
+  dirty = false;
+  lastHash = location.hash;
+  route();
+});
+window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+document.addEventListener("click", async e => {
+  const a = e.target.closest("a.unresolved");
+  if (a) {
+    e.preventDefault();
+    if (confirm('Create note "' + a.dataset.target + '"?')) createNote(a.dataset.target);
+  }
+});
+
+document.addEventListener("change", async e => {
+  const cb = e.target;
+  if (!cb.matches(".md input[type=checkbox]")) return;
+  const lines = source.split("\n"), n = +cb.dataset.line;
+  if (!(n in lines)) return;
+  lines[n] = lines[n].replace(/\[([ xX])\]/, cb.checked ? "[x]" : "[ ]");
+  const old = source;
+  source = lines.join("\n");
+  if (await save()) {
+    cb.closest("li").classList.toggle("done", cb.checked);
+  } else { source = old; cb.checked = !cb.checked; }
+});
+
+$("#search").addEventListener("input", drawSide);
+$("#search").addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  const first = $("#side a");
+  if (first) location.hash = first.getAttribute("href").slice(1);
+  else createNote($("#search").value);
+  $("#search").value = "";
+  drawSide();
+});
+$("#new").onclick = () => { const n = prompt("New note name (use / for folders):"); if (n) createNote(n); };
+$("#settings").onclick = () => { location.hash = "settings"; };
+$("#menu").onclick = () => document.body.classList.toggle("side");
+
+loadTree().then(route).catch(e => {
+  $("#main").innerHTML = '<div class="page"><p class="empty">' + esc(e.message) + '</p><p class="empty"><a href="#settings" style="color:var(--accent)">Device settings</a></p></div>';
+  if (location.hash === "#settings") showSettings();
+});
+</script>
+</body>
+</html>

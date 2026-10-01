@@ -17,6 +17,8 @@ class EditorScreen : public Screen {
   bool open(const std::string& path, int scroll, bool reading);
   const std::string& path() const { return path_; }
   bool save();
+  // Reloads from the card unless there are unsaved edits (which then win on next save).
+  void reloadIfClean();
 
   void draw() override;
   void onTap(int x, int y) override;

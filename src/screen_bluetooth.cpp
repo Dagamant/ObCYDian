@@ -35,7 +35,7 @@ void BluetoothScreen::drawBody() {
   gfx.setTextDatum(textdatum_t::top_left);
   switch (st) {
     case State::Off:
-      ui::message("", "Turn Bluetooth on to use a keyboard.\nThe device restarts to switch radios.", y - 30);
+      ui::message("", "Turn Bluetooth on to use a keyboard. This turns WiFi\noff; the device restarts to switch radios.", y - 30);
       break;
     case State::NoKeyboard:
       gfx.drawString("Put your keyboard in pairing mode, then tap Pair.", M, y);
@@ -105,11 +105,7 @@ void BluetoothScreen::onTap(int x, int y) {
   if (btnPower_.contains(x, y)) {
     bool on = st != State::Off;
     app::confirm(on ? "Turn Bluetooth off?" : "Turn Bluetooth on?", "The device will restart.", "Restart",
-                 theme::ACCENT_BG, [on] {
-                   btkbd::setEnabled(!on);
-                   delay(100);
-                   ESP.restart();
-                 });
+                 theme::ACCENT_BG, [on] { btkbd::setEnabled(!on); });
     return;
   }
   if (st == State::Off) return;

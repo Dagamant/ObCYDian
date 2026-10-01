@@ -12,6 +12,7 @@
 #include "storage.h"
 #include "theme.h"
 #include "touch_calib.h"
+#include "webserver.h"
 
 static constexpr uint8_t kRotation = 1;  // landscape 480x320, USB-C on the left
 
@@ -41,6 +42,7 @@ void setup() {
   storage::begin();
 
   btkbd::begin();
+  web::begin();
   app::begin();
   Serial.printf("[app] ready, heap free %u\n", ESP.getFreeHeap());
 }
@@ -51,5 +53,6 @@ void loop() {
   while (input::poll(e)) app::handle(e);
   while (btkbd::poll(e)) app::handle(e);
   app::loop();
+  web::loop();
   delay(5);
 }

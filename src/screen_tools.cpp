@@ -1,4 +1,5 @@
 #include "btkbd.h"
+#include "radio.h"
 #include "screens.h"
 #include "touch_calib.h"
 
@@ -47,58 +48,70 @@ std::string humanBytes(uint64_t b) {
 
 void ToolsScreen::draw() {
   ui::topBar("Settings", ui::Icon::Back, ui::Icon::None);
-  btnBluetooth_ = {gfx.width() - theme::MARGIN - 4 - 220, theme::BAR_H + 10, 220, 40};
-  gfx.fillRect(0, theme::BAR_H, gfx.width(), gfx.height() - theme::BAR_H, theme::BG);
+  const int W = gfx.width(), M = theme::MARGIN;
+  gfx.fillRect(0, theme::BAR_H, W, gfx.height() - theme::BAR_H, theme::BG);
   drawInfo();
 
-  const int bw = 220, bh = 44, gap = 10;
-  const int lx = theme::MARGIN + 4, rx = gfx.width() - theme::MARGIN - 4 - bw;
-  const int y1 = 204, y2 = y1 + bh + gap;
-  btnFormat_ = {lx, y1, bw, bh};
-  btnSample_ = {rx, y1, bw, bh};
-  btnRemount_ = {lx, y2, bw, bh};
-  btnCalibrate_ = {rx, y2, bw, bh};
-  bool card = storage::state() != storage::State::NoCard;
-  ui::button(btnFormat_, "Format SD card", card ? theme::DANGER : theme::BORDER);
-  ui::button(btnSample_, "Add sample notes",
-             storage::state() == storage::State::Mounted ? theme::ACCENT_BG : theme::BORDER);
-  ui::button(btnRemount_, "Remount SD card", theme::BORDER);
+  // Right column: connections
+  const int rx = 248, rw = W - M - rx;
+  gfx.setFont(font::h2());
+  gfx.setTextColor(theme::TEXT_BRIGHT);
+  gfx.drawString("Connections", rx, theme::BAR_H + 10);
+  gfx.setFont(font::small());
+  gfx.setTextColor(theme::MUTED);
+  gfx.drawString((std::string("Radio: ") + radio::name(radio::mode())).c_str(), rx, theme::BAR_H + 40);
+  btnBluetooth_ = {rx, theme::BAR_H + 62, rw, 40};
+  btnWifi_ = {rx, theme::BAR_H + 108, rw, 40};
+  btnCalibrate_ = {rx, theme::BAR_H + 154, rw, 40};
+  ui::button(btnBluetooth_, "Bluetooth keyboard",
+             radio::mode() == radio::Mode::Bluetooth ? theme::ACCENT_BG : theme::BORDER);
+  ui::button(btnWifi_, "WiFi & web server", radio::mode() == radio::Mode::Wifi ? theme::ACCENT_BG : theme::BORDER);
   ui::button(btnCalibrate_, "Calibrate touch", theme::BORDER);
+
+  // Bottom row: SD card actions
+  const int bw = (W - 2 * M - 16) / 3, by = gfx.height() - 54;
+  btnFormat_ = {M, by, bw, 44};
+  btnSample_ = {M + bw + 8, by, bw, 44};
+  btnRemount_ = {M + 2 * (bw + 8), by, bw, 44};
+  bool card = storage::state() != storage::State::NoCard;
+  ui::button(btnFormat_, "Format SD", card ? theme::DANGER : theme::BORDER);
+  ui::button(btnSample_, "Sample notes", storage::state() == storage::State::Mounted ? theme::BORDER : theme::BG_ALT);
+  ui::button(btnRemount_, "Remount SD", theme::BORDER);
   if (storage::state() == storage::State::Mounted && !freeKnown_) needFree_ = true;
 }
 
 void ToolsScreen::drawInfo() {
-  const int x = theme::MARGIN + 4, vx = 150;
+  const int x = theme::MARGIN + 4, vx = 112;
   int y = theme::BAR_H + 10;
-  gfx.fillRect(0, y, gfx.width(), 190 - y, theme::BG);
+  gfx.fillRect(0, y, 240, gfx.height() - 64 - y, theme::BG);
   gfx.setFont(font::h2());
   gfx.setTextColor(theme::TEXT_BRIGHT);
   gfx.drawString("SD card", x, y);
-  y += 32;
+  y += 34;
 
   auto row = [&](const char* k, const std::string& v) {
     gfx.setFont(font::ui());
     gfx.setTextColor(theme::MUTED);
     gfx.drawString(k, x, y);
     gfx.setTextColor(theme::TEXT);
-    gfx.drawString(v.c_str(), vx, y);
-    y += 22;
+    gfx.drawString(ui::ellipsize(v, 236 - vx, font::ui()).c_str(), vx, y);
+    y += 24;
   };
   auto ci = storage::info();
   switch (storage::state()) {
-    case storage::State::NoCard: row("Status", "No card detected"); break;
+    case storage::State::NoCard: row("Status", "No card"); break;
     case storage::State::NoFilesystem: row("Status", "Not formatted"); break;
     case storage::State::Mounted: row("Status", "Mounted"); break;
   }
   if (storage::state() != storage::State::NoCard) {
-    row("Card", std::string(ci.cardType) + ", " + humanBytes(ci.capacity));
-    row("Filesystem", ci.fsType);
+    std::string type = ci.cardType;
+    row("Card", type.substr(0, type.find('/')) + " " + humanBytes(ci.capacity));
+    row("Format", ci.fsType);
   }
   if (storage::state() == storage::State::Mounted) {
-    row("Free space", freeKnown_ ? humanBytes(free_) : "calculating...");
+    row("Free", freeKnown_ ? humanBytes(free_) : "...");
     row("Notes", std::to_string(storage::notes().size()));
   }
-  ui::button(btnBluetooth_, "Bluetooth keyboard", theme::ACCENT_BG);
 }
 
 void ToolsScreen::tick() {
@@ -150,6 +163,8 @@ void ToolsScreen::onTap(int x, int y) {
     app::toast(storage::state() == storage::State::Mounted ? "Card mounted" : "Card not mounted");
   } else if (btnBluetooth_.contains(x, y)) {
     app::openBluetooth();
+  } else if (btnWifi_.contains(x, y)) {
+    app::openWifi();
   } else if (btnCalibrate_.contains(x, y)) {
     touch_calib::run(gfx);
     draw();
