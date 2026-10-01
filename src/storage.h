@@ -57,13 +57,16 @@ bool renameFolder(const std::string& from, const std::string& to, int* linksUpda
 // Deletes a folder and everything inside it.
 bool removeFolder(const std::string& dir);
 
-// Full-text search: case-insensitive substring over every note's text.
+// A line in a note
 struct Hit {
   std::string path;
   int line;          // 0-based line number of the match
   std::string text;  // that line, trimmed
 };
+// Full-text search: case-insensitive substring over every note's text.
 std::vector<Hit> searchText(const std::string& query, size_t maxResults);
+// Notes linking to `path`: the first matching line in each.
+std::vector<Hit> backlinks(const std::string& path);
 
 // Replaces characters FAT can't store; trims spaces and dots at the ends.
 std::string sanitizeName(const std::string& name);
@@ -83,8 +86,11 @@ uint32_t generation();
 std::vector<std::string> search(const std::string& query, size_t maxResults);
 // Shortest unambiguous link text for a note: its name, or vault path if names collide.
 std::string linkText(const std::string& path);
-// Notes linking to `path`, each with the text of the first line containing the link.
-std::vector<std::pair<std::string, std::string>> backlinks(const std::string& path);
+
+// Values of a frontmatter list property ("key: [a, b]", "key: a" or a "- a" list).
+std::vector<std::string> frontmatterList(const std::string& text, const char* key);
+// Aliases from each note's frontmatter (rebuilt by rescan()).
+const std::vector<std::pair<std::string, std::string>>& aliases();  // (alias, path)
 // Obsidian-style link resolution. `target` is the [[link]] text without alias/heading.
 // Returns "" if no note matches.
 std::string resolveLink(const std::string& target, const std::string& fromPath);

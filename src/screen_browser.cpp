@@ -135,70 +135,9 @@ void BrowserScreen::activate(int i) {
   }
 }
 
-void BrowserScreen::newNote() {
-  std::string p = storage::createNote(dir_, storage::baseName(storage::untitledPath(dir_)));
-  if (p.empty()) return app::toast("Couldn't create note");
-  app::editNote(p);
-}
+void BrowserScreen::newNote() { app::newNoteIn(dir_); }
 
-void BrowserScreen::folderMenu() {
-  const std::string dir = dir_;
-  const std::string name = dir == "/" ? "Vault" : storage::baseName(dir);
-  std::vector<std::string> items = {"New note", "New folder"};
-  if (dir != "/") {
-    items.push_back("Rename / move folder");
-    items.push_back("Delete folder");
-  }
-  app::menu(tf::printable(name), items, [this, dir, name](int i) {
-    if (i == 0) return newNote();
-    if (i == 1) {
-      return app::prompt("New folder", "Name for a new folder in " + name, "", false, [dir](const std::string& n) {
-        std::string clean = storage::sanitizeName(n);
-        if (clean.empty()) return;
-        std::string path = storage::joinPath(dir, clean);
-        if (storage::exists(path)) return app::toast("That folder already exists");
-        if (!storage::mkdirs(path)) return app::toast("Couldn't create folder");
-        storage::rescan();
-        app::openFolder(path);
-      });
-    }
-    if (i == 2) {
-      return app::prompt("Rename folder", "New name (use / to move it, e.g. Archive/2026)", storage::baseName(dir), false,
-                         [dir](const std::string& n) {
-                           if (n.empty()) return;
-                           // A plain name stays in the same parent; a path is from the vault root
-                           std::string to;
-                           if (n.find('/') == std::string::npos) to = storage::joinPath(storage::parentDir(dir), storage::sanitizeName(n));
-                           else {
-                             to = "";
-                             size_t i = 0;
-                             while (i <= n.size()) {
-                               size_t j = n.find('/', i);
-                               if (j == std::string::npos) j = n.size();
-                               std::string seg = storage::sanitizeName(n.substr(i, j - i));
-                               if (!seg.empty()) to += "/" + seg;
-                               i = j + 1;
-                             }
-                           }
-                           if (to.empty() || to == dir) return;
-                           if (storage::exists(to)) return app::toast("Something with that name exists");
-                           int links = 0;
-                           if (!storage::renameFolder(dir, to, &links)) return app::toast("Rename failed");
-                           app::folderPathChanged(dir, to);  // re-shows the folder under its new name
-                           if (links) app::toast("Updated " + std::to_string(links) + (links == 1 ? " link" : " links"));
-                         });
-    }
-    if (i == 3) {
-      int n = storage::countNotesIn(dir);
-      std::string what = n ? "It holds " + std::to_string(n) + (n == 1 ? " note" : " notes") + ", also deleted." : "The folder is empty.";
-      app::confirm("Delete " + tf::printable(name) + "?", what, "Delete", theme::DANGER, [dir] {
-        bool ok = storage::removeFolder(dir);
-        app::folderDeleted(dir);
-        app::toast(ok ? "Folder deleted" : "Couldn't delete everything");
-      });
-    }
-  });
-}
+void BrowserScreen::folderMenu() { app::commandPalette(false); }
 
 void BrowserScreen::onKey(const input::Event& e) {
   using namespace input;

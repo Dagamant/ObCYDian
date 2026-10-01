@@ -3,7 +3,11 @@
 #include <vector>
 
 #include "btkbd.h"
+#include <map>
+#include <memory>
+
 #include "editor.h"
+#include "vault.h"
 #include "power.h"
 #include "radio.h"
 #include "webserver.h"
@@ -14,12 +18,14 @@ namespace app {
 
 namespace {
 
-enum class Kind { Folder, Note, Edit, Tools, Switcher, Bluetooth, Wifi, Prompt, Power, Search };
+enum class Kind { Folder, Note, Edit, Tools, Switcher, Bluetooth, Wifi, Prompt, Power, Search, Picker };
 
 struct Nav {
   Kind kind;
   std::string path;
   int scroll;
+  int extra = 0;    // Picker: id of its PickerData
+  int cursor = -1;  // Edit: cursor position when we left it
 };
 
 BrowserScreen browser;
@@ -31,6 +37,9 @@ WifiScreen wifi;
 PromptScreen promptScreen;
 PowerScreen powerScreen;
 SearchScreen searchScreen;
+PickerScreen picker;
+std::map<int, std::unique_ptr<PickerData>> pickers;  // by id, one per Picker history entry
+int nextPickerId = 1;
 
 std::vector<Nav> history;
 Screen* current = nullptr;
@@ -61,7 +70,10 @@ void autoKeyboard() {
 void leaveCurrent() {
   if (!current) return;
   current->onLeave();
-  if (!history.empty()) history.back().scroll = current->scroll();
+  if (!history.empty()) {
+    history.back().scroll = current->scroll();
+    history.back().cursor = current->cursorPos();
+  }
 }
 
 void show() {
@@ -74,6 +86,7 @@ void show() {
     case Kind::Note:
     case Kind::Edit:
       editor.open(n.path, n.scroll, n.kind == Kind::Note);
+      if (n.kind == Kind::Edit && n.cursor >= 0) editor.setCursorPos(n.cursor);
       current = &editor;
       break;
     case Kind::Tools:
@@ -97,15 +110,20 @@ void show() {
     case Kind::Search:
       current = &searchScreen;
       break;
+    case Kind::Picker:
+      picker.load(pickers[n.extra].get());
+      current = &picker;
+      break;
   }
   autoKeyboard();
   redraw();
 }
 
-void push(Kind k, const std::string& path, int scroll) {
+void push(Kind k, const std::string& path, int scroll, int extra = 0) {
   leaveCurrent();
   if (history.size() >= 40) history.erase(history.begin());
-  history.push_back({k, path, scroll});
+  history.push_back({k, path, scroll, extra});
+  if (k == Kind::Note || k == Kind::Edit) vault::noteOpened(path);
   show();
 }
 
@@ -246,6 +264,8 @@ void handle(const input::Event& e) {
   if (e.type == Type::Key && e.ctrl() && e.key == K_CHAR && current != &switcher) {
     if (e.ch == 'o') return openSwitcher(SwitcherMode::Open, contextDir());
     if (e.ch == 'n') return openSwitcher(SwitcherMode::New, contextDir());
+    if (e.ch == 'p' && current != &picker) return commandPalette(true);
+    if (e.ch == 'd' && !e.shift()) return openDailyNote(0);
   }
   switch (e.type) {
     case Type::Tap: current->onTap(e.x, e.y); break;
@@ -280,6 +300,7 @@ static bool inFolder(const std::string& p, const std::string& dir) {
 }
 
 void folderPathChanged(const std::string& from, const std::string& to) {
+  vault::pathChanged(from, to);
   bool top = !history.empty() && inFolder(history.back().path, from);
   for (auto& n : history)
     if (inFolder(n.path, from)) n.path = to + n.path.substr(from.size());
@@ -287,6 +308,7 @@ void folderPathChanged(const std::string& from, const std::string& to) {
 }
 
 void folderDeleted(const std::string& dir) {
+  vault::pathDeleted(dir);
   const bool topAffected = !history.empty() && inFolder(history.back().path, dir);
   std::vector<Nav> kept;
   for (auto& n : history)
@@ -301,6 +323,51 @@ void folderDeleted(const std::string& dir) {
     externalChange(dir);
   }
 }
+
+void pick(PickerData data) {
+  // Forget lists no longer reachable through the history
+  for (auto it = pickers.begin(); it != pickers.end();) {
+    bool used = false;
+    for (auto& n : history)
+      if (n.kind == Kind::Picker && n.extra == it->first) used = true;
+    it = used ? std::next(it) : pickers.erase(it);
+  }
+  int id = nextPickerId++;
+  pickers[id] = std::make_unique<PickerData>(std::move(data));
+  push(Kind::Picker, "", 0, id);
+}
+
+void pickerChose(int index) {
+  if (history.empty() || history.back().kind != Kind::Picker) return;
+  PickerData* d = pickers[history.back().extra].get();
+  auto cb = d->onPick;
+  if (d->closeOnPick) {  // menus: return to the screen underneath, then act
+    history.pop_back();
+    show();
+  }
+  if (cb) cb(index);
+}
+
+Context context() {
+  // Skip over lists/menus to the screen they were opened from
+  for (auto it = history.rbegin(); it != history.rend(); ++it) {
+    if (it->kind == Kind::Picker) continue;
+    if (it->kind == Kind::Folder) return {Context::Folder, it->path, false};
+    if (it->kind == Kind::Note || it->kind == Kind::Edit) return {Context::Note, it->path, it->kind == Kind::Edit};
+    break;
+  }
+  return {Context::Other, "", false};
+}
+
+void insertIntoNote(const std::string& text) {
+  if (current == &editor) editor.insertAtCursor(text);
+}
+
+void revealLine(int line) {
+  if (current == &editor) editor.revealLine(line);
+}
+
+std::string noteText() { return current == &editor ? editor.text() : ""; }
 
 void quickMenu() {
   const bool wifi = radio::mode() == radio::Mode::Wifi;
@@ -347,29 +414,7 @@ void finishSwitcher(const std::string& path, bool edit) {
   show();
 }
 
-void noteMenu(const std::string& path) {
-  menu(storage::baseName(path), {"Rename / move...", "Delete note", "New note in this folder"},
-       [path](int i) {
-         if (i == 0) {
-           openSwitcher(SwitcherMode::Rename, storage::parentDir(path), path);
-         } else if (i == 1) {
-           confirm("Delete note?", storage::baseName(path) + " will be removed from the card.",
-                   "Delete", theme::DANGER, [path] {
-                     if (current) current->onLeave();
-                     if (storage::remove(path)) {
-                       noteDeleted(path);
-                       toast("Note deleted");
-                     } else {
-                       toast("Delete failed");
-                     }
-                   });
-         } else if (i == 2) {
-           std::string p = storage::createNote(storage::parentDir(path),
-                                               storage::baseName(storage::untitledPath(storage::parentDir(path))));
-           if (!p.empty()) editNote(p);
-         }
-       });
-}
+void noteMenu(const std::string& path) { commandPalette(false); }
 
 void back() {
   leaveCurrent();
@@ -393,6 +438,7 @@ void home() {
 }
 
 void notePathChanged(const std::string& from, const std::string& to) {
+  vault::pathChanged(from, to);
   bool top = !history.empty() && history.back().path == from;
   for (auto& n : history)
     if (n.path == from) n.path = to;
@@ -426,6 +472,7 @@ void externalChange(const std::string& path) {
 }
 
 void noteDeleted(const std::string& path) {
+  vault::pathDeleted(path);
   const bool topAffected = !history.empty() && history.back().path == path && history.back().kind != Kind::Folder;
   std::vector<Nav> kept;
   for (auto& n : history)

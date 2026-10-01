@@ -21,6 +21,9 @@ class EditorScreen : public Screen {
   void reloadIfClean();
   // Scrolls so 0-based source line `line` is near the top (and puts the cursor there).
   void revealLine(int line);
+  // Inserts text at the cursor (switching the note to editing first if needed).
+  void insertAtCursor(const std::string& s);
+  const std::string& text() const { return text_; }
 
   void draw() override;
   void onTap(int x, int y) override;
@@ -30,6 +33,8 @@ class EditorScreen : public Screen {
   void tick() override;
   int scroll() const override { return scroll_; }
   bool acceptsText() const override { return !reading_; }
+  int cursorPos() const override { return reading_ ? -1 : (int)cursor_; }
+  void setCursorPos(int pos) override;
 
   // Layout structures (public so the implementation's helpers can use them)
   struct Seg {

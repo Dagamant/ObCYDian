@@ -14,6 +14,7 @@ static SdFs sd;
 static State st = State::NoCard;
 static std::vector<std::string> index_;
 static std::vector<std::string> folders_;
+static std::vector<std::pair<std::string, std::string>> aliases_;  // (alias, note path)
 static uint32_t generation_ = 0;
 
 static bool endsWithCI(const std::string& s, const std::string& suffix) {
@@ -394,12 +395,20 @@ static void scanDir(const std::string& dir, int depth) {
 void rescan() {
   index_.clear();
   folders_.clear();
+  aliases_.clear();
   generation_++;
   if (st != State::Mounted) return;
   uint32_t t = millis();
   scanDir("/", 0);
   std::sort(index_.begin(), index_.end(), lessCaseInsensitive);
   std::sort(folders_.begin(), folders_.end(), lessCaseInsensitive);
+  // Aliases live in frontmatter, so only the start of each note needs reading
+  for (auto& n : index_) {
+    std::string head;
+    if (!readFile(n, head, 2048)) continue;
+    for (auto& a : frontmatterList(head, "aliases")) aliases_.push_back({a, n});
+    for (auto& a : frontmatterList(head, "alias")) aliases_.push_back({a, n});
+  }
   generation_++;
   Serial.printf("[sd] indexed %u notes in %lu ms\n", (unsigned)index_.size(), millis() - t);
 }
@@ -441,6 +450,14 @@ std::vector<std::string> search(const std::string& query, size_t maxResults) {
     }
     hits.push_back({sc, &p});
   }
+  for (auto& a : aliases_) {  // notes found by an alias rank just after name matches
+    int sc = fuzzyScore(a.first, query);
+    if (sc < 0) continue;
+    bool dup = false;
+    for (auto& h : hits)
+      if (*h.path == a.second) dup = true;
+    if (!dup) hits.push_back({sc + 1, &a.second});
+  }
   std::stable_sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) {
     if (a.score != b.score) return a.score < b.score;
     return a.path->size() < b.path->size();
@@ -453,8 +470,8 @@ std::vector<std::string> search(const std::string& query, size_t maxResults) {
   return out;
 }
 
-std::vector<std::pair<std::string, std::string>> backlinks(const std::string& path) {
-  std::vector<std::pair<std::string, std::string>> out;
+std::vector<Hit> backlinks(const std::string& path) {
+  std::vector<Hit> out;
   for (const auto& note : std::vector<std::string>(index_)) {
     if (note == path) continue;
     std::string text;
@@ -469,12 +486,63 @@ std::vector<std::pair<std::string, std::string>> backlinks(const std::string& pa
       size_t le = text.find('\n', a);
       std::string line = text.substr(ls, (le == std::string::npos ? text.size() : le) - ls);
       if (line.size() > 200) line = line.substr(0, 200) + "...";
-      out.push_back({note, line});
+      out.push_back({note, (int)std::count(text.begin(), text.begin() + ls, '\n'), line});
       break;
     }
   }
   return out;
 }
+
+std::vector<std::string> frontmatterList(const std::string& text, const char* key) {
+  std::vector<std::string> out;
+  if (text.compare(0, 4, "---\n") != 0) return out;
+  size_t end = text.find("\n---", 3);
+  if (end == std::string::npos) return out;
+  const std::string fm = text.substr(4, end - 3);
+  const std::string k = std::string(key) + ":";
+  size_t pos = 0;
+  while (pos < fm.size()) {
+    size_t le = fm.find('\n', pos);
+    if (le == std::string::npos) le = fm.size();
+    std::string line = fm.substr(pos, le - pos);
+    pos = le + 1;
+    if (strncasecmp(line.c_str(), k.c_str(), k.size()) != 0) continue;
+    std::string v = line.substr(k.size());
+    auto trim = [](std::string s) {
+      size_t a = s.find_first_not_of(" \t\"'"), b = s.find_last_not_of(" \t\"'");
+      return a == std::string::npos ? std::string() : s.substr(a, b - a + 1);
+    };
+    v = trim(v);
+    if (!v.empty() && v[0] == '[') {  // inline list
+      v = v.substr(1, v.find(']') == std::string::npos ? std::string::npos : v.find(']') - 1);
+      size_t i = 0;
+      while (i <= v.size()) {
+        size_t j = v.find(',', i);
+        if (j == std::string::npos) j = v.size();
+        std::string item = trim(v.substr(i, j - i));
+        if (!item.empty()) out.push_back(item);
+        i = j + 1;
+      }
+    } else if (!v.empty()) {
+      out.push_back(v);
+    } else {  // block list: following "  - item" lines
+      while (pos < fm.size()) {
+        size_t e = fm.find('\n', pos);
+        if (e == std::string::npos) e = fm.size();
+        std::string item = fm.substr(pos, e - pos);
+        size_t dash = item.find_first_not_of(" \t");
+        if (dash == std::string::npos || item[dash] != '-') break;
+        item = trim(item.substr(dash + 1));
+        if (!item.empty()) out.push_back(item);
+        pos = e + 1;
+      }
+    }
+    break;
+  }
+  return out;
+}
+
+const std::vector<std::pair<std::string, std::string>>& aliases() { return aliases_; }
 
 std::string linkText(const std::string& path) {
   std::string name = baseName(path);
@@ -520,12 +588,17 @@ std::string resolveLink(const std::string& rawTarget, const std::string& fromPat
     return "";
   }
 
-  // Bare name: prefer a note in the same folder, then the shortest path.
+  // Bare name: prefer a note in the same folder, then the shortest path, then an alias.
   std::string sameDir = joinPath(parentDir(fromPath), target);
   std::string best;
   for (auto& n : index_) {
     if (strcasecmp(n.c_str(), sameDir.c_str()) == 0) return n;
     if (endsWithCI(n, "/" + target) && (best.empty() || n.size() < best.size())) best = n;
+  }
+  if (best.empty()) {
+    const std::string name = target.substr(0, target.size() - 3);
+    for (auto& a : aliases_)
+      if (strcasecmp(a.first.c_str(), name.c_str()) == 0) return a.second;
   }
   return best;
 }

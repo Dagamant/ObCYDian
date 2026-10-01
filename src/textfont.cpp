@@ -100,6 +100,42 @@ std::string printable(const std::string& s) {
   return out;
 }
 
+std::string plainLine(const std::string& md) {
+  std::string s = md;
+  // Line prefixes: quote, list marker, task box, heading
+  size_t p = s.find_first_not_of(" \t>");
+  s = p == std::string::npos ? "" : s.substr(p);
+  if (s.size() > 1 && strchr("-*+", s[0]) && s[1] == ' ') s = s.substr(2);
+  if (s.size() > 3 && s[0] == '[' && s[2] == ']' && s[3] == ' ') s = s.substr(4);
+  size_t h = 0;
+  while (h < s.size() && s[h] == '#') h++;
+  if (h && h < s.size() && s[h] == ' ') s = s.substr(h + 1);
+  std::string out;
+  for (size_t i = 0; i < s.size();) {
+    if (s.compare(i, 2, "[[") == 0) {
+      size_t e = s.find("]]", i + 2);
+      if (e != std::string::npos) {
+        std::string inner = s.substr(i + 2, e - i - 2);
+        size_t bar = inner.find('|');
+        out += bar == std::string::npos ? inner : inner.substr(bar + 1);
+        i = e + 2;
+        continue;
+      }
+    }
+    if (s.compare(i, 2, "**") == 0 || s.compare(i, 2, "__") == 0 || s.compare(i, 2, "==") == 0 ||
+        s.compare(i, 2, "~~") == 0 || s.compare(i, 2, "%%") == 0) {
+      i += 2;
+      continue;
+    }
+    if (s[i] == '`' || (s[i] == '*' && (i + 1 >= s.size() || s[i + 1] != ' '))) {
+      i++;
+      continue;
+    }
+    out += s[i++];
+  }
+  return out;
+}
+
 size_t prevChar(const std::string& s, size_t i) {
   if (i == 0) return 0;
   i--;

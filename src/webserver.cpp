@@ -8,6 +8,7 @@
 
 #include "app.h"
 #include "battery.h"
+#include "clock.h"
 #include "power.h"
 #include "radio.h"
 #include "storage.h"
@@ -152,8 +153,30 @@ void handleTree() {
     j += (first ? "" : ",") + q(n);
     first = false;
   }
-  j += "]}";
+  j += "],\"aliases\":{";
+  first = true;
+  std::string lastPath;
+  for (auto& a : storage::aliases()) {  // grouped by note: {"/path.md": ["alias", ...]}
+    if (a.second != lastPath) {
+      j += std::string(lastPath.empty() ? "" : "],") + q(a.second) + ":[";
+      lastPath = a.second;
+      first = true;
+    }
+    j += (first ? "" : ",") + q(a.first);
+    first = false;
+  }
+  j += lastPath.empty() ? "}}" : "]}}";
   sendJson(200, j);
+}
+
+void handleTime() {
+  long utc = atol(arg("utc").c_str());
+  int offset = atoi(arg("offset").c_str());
+  if (utc < 1700000000) return sendError(400, "Bad time");
+  // Trust the browser when we have no time yet, or for the timezone offset
+  if (!wallclock::valid() || labs((long)time(nullptr) - utc) > 120) wallclock::set(utc, offset);
+  else wallclock::setOffset(offset);
+  sendJson(200, "{}");
 }
 
 void handleGetNote() {
@@ -218,7 +241,7 @@ void handleBacklinks() {
   std::string j = "[";
   bool first = true;
   for (auto& b : storage::backlinks(path)) {
-    j += std::string(first ? "" : ",") + "{\"path\":" + q(b.first) + ",\"line\":" + q(b.second) + "}";
+    j += std::string(first ? "" : ",") + "{\"path\":" + q(b.path) + ",\"line\":" + q(b.text) + ",\"n\":" + std::to_string(b.line) + "}";
     first = false;
   }
   sendJson(200, j + "]");
@@ -344,6 +367,7 @@ void startServer() {
   server.on("/api/folder/rename", HTTP_POST, handleRenameFolder);
   server.on("/api/search", HTTP_GET, handleSearch);
   server.on("/api/radio", HTTP_POST, handleRadio);
+  server.on("/api/time", HTTP_POST, handleTime);
   server.on("/api/wifi/scan", HTTP_GET, handleScan);
   server.on("/api/wifi", HTTP_POST, handleSetWifi);
   server.onNotFound(handleNotFound);

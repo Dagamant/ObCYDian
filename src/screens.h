@@ -149,3 +149,46 @@ class SearchScreen : public Screen {
   int sel_ = 0, first_ = 0;
   uint32_t dueAt_ = 0;
 };
+
+// One row of a PickerScreen list
+struct PickItem {
+  std::string label;
+  std::string detail;  // small, right-aligned (ASCII)
+  std::string sub;     // optional second line
+  int indent = 0;      // pixels
+  int check = -1;      // -1 none, 0 open checkbox, 1 ticked
+};
+
+// Everything a picker shows; kept per history entry so lists can be nested.
+struct PickerData {
+  std::string title, empty;
+  std::vector<PickItem> items;
+  bool filterable = false;
+  bool closeOnPick = false;  // menus/palette: leave before running the action
+  std::function<void(int)> onPick;
+  std::function<int(int)> onToggle;  // checkbox tapped: returns the new state
+};
+
+// Generic list: command palette, outline, backlinks, tags, tasks, recent, bookmarks...
+class PickerScreen : public Screen {
+ public:
+  void load(PickerData* data);
+  void draw() override;
+  void onTap(int x, int y) override;
+  void onDrag(int dy) override;
+  void onKey(const input::Event& e) override;
+  bool acceptsText() const override { return d_ && d_->filterable; }
+
+ private:
+  void refilter();
+  void drawInput();
+  void drawList();
+  int listY() const;
+  int rowH() const;
+  int rows() const;
+  void pick(int visibleIndex);
+  PickerData* d_ = nullptr;
+  std::string query_;
+  std::vector<int> shown_;  // indices into d_->items
+  int sel_ = 0, first_ = 0, dragAcc_ = 0;
+};

@@ -5,6 +5,8 @@
 #include <Arduino.h>
 
 #include "app.h"
+#include "clock.h"
+#include "vault.h"
 #include "battery.h"
 #include "btkbd.h"
 #include "debug_console.h"
@@ -56,6 +58,8 @@ void setup() {
   gfx.drawString("Mounting SD card...", gfx.width() / 2, gfx.height() / 2 + 30);
   gfx.setTextDatum(textdatum_t::top_left);
   storage::begin();
+  vault::load();
+  wallclock::begin();
   battery::begin();
 
   btkbd::begin();
@@ -95,5 +99,6 @@ void loop() {
   web::loop();
   power::loop();
   battery::loop();
+  wallclock::loop();
   delay(5);
 }

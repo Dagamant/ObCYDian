@@ -40,10 +40,10 @@ enum : uint16_t {
 enum : uint8_t { KD_TEXT, KD_MARK, KD_BULLET, KD_CHECK, KD_CHECK_DONE, KD_RULE };
 
 // Line block kinds
-enum : uint8_t { BL_TEXT, BL_CODE, BL_FENCE, BL_FRONT };
+enum : uint8_t { BL_TEXT, BL_CODE, BL_FENCE, BL_FRONT, BL_COMMENT };
 
 // Block state carried from line to line
-enum : uint8_t { SS_CODE = 1, SS_FRONT = 2, SS_TILDE = 4 };
+enum : uint8_t { SS_CODE = 1, SS_FRONT = 2, SS_TILDE = 4, SS_COMMENT = 64 };
 // Bits 3-5 of the line state carry the callout type through the lines of a callout
 constexpr int kCalloutShift = 3;
 
@@ -167,6 +167,15 @@ void inlineSegs(const char* s, uint32_t a, uint32_t n, uint16_t base, const Reso
       textStart = i + 1;
       i += 2;
       continue;
+    }
+    if (c == '%' && i + 1 < n && s[i + 1] == '%') {  // %%inline comment%%
+      uint32_t j = find("%%", i + 2);
+      if (j < n) {
+        flush(i);
+        mark(i, j + 2, ST_FAINT);
+        i = textStart = j + 2;
+        continue;
+      }
     }
     if (c == '`') {
       uint32_t j = find("`", i + 1);
@@ -304,6 +313,7 @@ uint8_t EditorScreen::stateOut(uint8_t st, int i) const {
   uint32_t n = lineLen(i);
   uint32_t fw = 0;
   while (fw < n && (p[fw] == ' ' || p[fw] == '\t')) fw++;
+  if (st & SS_COMMENT) return memmem(p, n, "%%", 2) ? 0 : SS_COMMENT;  // %% ... %% block
   if (st & SS_FRONT) return (n == 3 && memcmp(p, "---", 3) == 0) ? 0 : SS_FRONT;
   if (st & SS_CODE) {
     const char* fence = (st & SS_TILDE) ? "~~~" : "```";
@@ -312,6 +322,7 @@ uint8_t EditorScreen::stateOut(uint8_t st, int i) const {
   if (i == 0 && n == 3 && memcmp(p, "---", 3) == 0) return SS_FRONT;
   if (startsWith(p, n, fw, "```")) return SS_CODE;
   if (startsWith(p, n, fw, "~~~")) return SS_CODE | SS_TILDE;
+  if (startsWith(p, n, fw, "%%") && !memmem(p + fw + 2, n - fw - 2, "%%", 2)) return SS_COMMENT;
   // Callouts: a quote starting "[!type]" opens one; following quote lines continue it
   if (fw < n && p[fw] == '>') {
     uint32_t pos = fw;
@@ -447,7 +458,11 @@ void EditorScreen::layoutLine(int i, bool revealed, Layout& L) {
   uint32_t contentStart = 0;
 
   // Fence lines (``` and the --- around frontmatter) are syntax: hidden unless revealed.
-  if (st & SS_FRONT) {
+  if ((st & SS_COMMENT) || (!(st & (SS_FRONT | SS_CODE)) && startsWith(p, n, fw, "%%") &&
+                            !memmem(p + fw + 2, n - fw - 2, "%%", 2))) {
+    L.block = BL_COMMENT;  // %% comment block: hidden unless the cursor is on it
+    if (n) L.segs.push_back({0, n, ST_FAINT, KD_MARK});
+  } else if (st & SS_FRONT) {
     bool end = n == 3 && memcmp(p, "---", 3) == 0;
     L.block = end ? BL_FENCE : BL_FRONT;
     if (n) L.segs.push_back({0, n, (uint16_t)(end ? ST_MONO | ST_FAINT : ST_MUTED), end ? KD_MARK : KD_TEXT});
@@ -608,6 +623,11 @@ void EditorScreen::layoutLine(int i, bool revealed, Layout& L) {
     y += row.h;
   }
   L.height = y + (L.heading ? 2 : 0);
+  if (!revealed && L.block == BL_COMMENT) {  // hidden comment line: (almost) no space
+    L.rows.resize(1);
+    L.rows[0] = {0, n, 0, 2, 3};
+    L.height = 3;
+  }
   if (!revealed && L.block == BL_FENCE) {  // hidden fence: just a thin strip of the code box
     L.rows.resize(1);
     L.rows[0] = {0, n, 0, 8, 10};
@@ -648,7 +668,7 @@ void EditorScreen::drawLine(LGFX_Sprite& s, const Layout& L, int y0) {
   const uint32_t ls = lines_[L.line].start;
   const int M = theme::MARGIN, W = gfx.width();
 
-  if (L.block != BL_TEXT) s.fillRect(M, y0, W - 2 * M, L.height, theme::CODE_BG);
+  if (L.block != BL_TEXT && L.block != BL_COMMENT) s.fillRect(M, y0, W - 2 * M, L.height, theme::CODE_BG);
   if (L.callout) s.fillRect(M, y0, W - 2 * M, L.height, tint(calloutColor(L.callout), 36));
   if (!L.revealed)
     for (int q = 0; q < L.quote; q++)
@@ -985,6 +1005,23 @@ void EditorScreen::revealLine(int line) {
   }
   scroll_ = std::max(0, std::min<int>(tops_[line] - 30, totalH_ - viewH()));
   draw();
+}
+
+void EditorScreen::setCursorPos(int pos) {
+  if (reading_ || pos < 0) return;
+  lines_[cursorLine_].dirty = true;
+  cursor_ = anchor_ = std::min<uint32_t>(pos, text_.size());
+  while (cursor_ > 0 && ((uint8_t)text_[cursor_] & 0xC0) == 0x80) cursor_--;  // stay on a char boundary
+  anchor_ = cursor_;
+  cursorLine_ = lineOf(cursor_);
+  lines_[cursorLine_].dirty = true;
+  relayout();
+}
+
+void EditorScreen::insertAtCursor(const std::string& s) {
+  const int prevLine = cursorLine_;
+  insertText(s);
+  afterChange(prevLine, -1, true);
 }
 
 void EditorScreen::reloadIfClean() {

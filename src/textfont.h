@@ -44,6 +44,10 @@ std::string printable(const std::string& s);
 // Plain ASCII version (for the small built-in UI font).
 std::string toAscii(const std::string& s);
 
+// A markdown line as plain text for list previews: [[a|b]] -> b, [[a]] -> a,
+// emphasis/code/highlight markers and list/quote/task/heading prefixes removed.
+std::string plainLine(const std::string& md);
+
 // UTF-8 aware cursor steps within a string.
 size_t prevChar(const std::string& s, size_t i);
 size_t nextChar(const std::string& s, size_t i);

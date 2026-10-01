@@ -7,6 +7,8 @@
 
 #include "input.h"
 
+struct PickerData;
+
 class Screen {
  public:
   virtual ~Screen() = default;
@@ -19,6 +21,9 @@ class Screen {
   virtual void onLeave() {}
   virtual void tick() {}
   virtual int scroll() const { return 0; }
+  // Text cursor to restore when coming back to this screen (-1: none)
+  virtual int cursorPos() const { return -1; }
+  virtual void setCursorPos(int pos) {}
   // Screens that take typed text get the on-screen keyboard.
   virtual bool acceptsText() const { return false; }
 };
@@ -77,6 +82,33 @@ void redraw();
 void reload();
 // Battery/radio quick menu (switch radio, screen off, sleep).
 void quickMenu();
+
+// --- Lists and commands
+// Shows a list screen (pushed onto the history, so lists can nest).
+void pick(PickerData data);
+void pickerChose(int index);  // called by the list screen
+// Command palette for the current screen (Ctrl+P, or the top bar's menu without a filter).
+void commandPalette(bool filter);
+
+// What the current screen shows, for context-aware commands
+struct Context {
+  enum Where { Folder, Note, Other } where;
+  std::string path;  // folder or note
+  bool editing;
+};
+Context context();
+// Operations on the open note (no-ops if none)
+void insertIntoNote(const std::string& text);
+void revealLine(int line);
+std::string noteText();  // current editor text (or "")
+
+// Folder/note actions shared by menus and the palette
+void newNoteIn(const std::string& dir);
+void newFolderIn(const std::string& dir);
+void renameFolderPrompt(const std::string& dir);
+void deleteFolderConfirm(const std::string& dir);
+void deleteNoteConfirm(const std::string& path);
+void openDailyNote(int offsetDays);
 // Shows/hides the on-screen keyboard and relays out the current screen.
 void toggleKeyboard();
 void toast(const std::string& msg, uint32_t ms = 2000);

@@ -64,7 +64,7 @@ void SearchScreen::drawResults() {
     gfx.setTextDatum(textdatum_t::top_left);
     gfx.setFont(font::ui());
     gfx.setTextColor(theme::MUTED);
-    gfx.drawString(ui::ellipsize(tf::printable(h.text), W - 2 * M - 8, font::ui()).c_str(), M + 4, y + 21);
+    gfx.drawString(ui::ellipsize(tf::printable(tf::plainLine(h.text)), W - 2 * M - 8, font::ui()).c_str(), M + 4, y + 21);
   }
   if ((int)hits_.size() > rows) {  // scrollbar
     int track = rows * kRowH, thumb = std::max(16, track * rows / (int)hits_.size());

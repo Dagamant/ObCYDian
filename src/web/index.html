@@ -128,6 +128,7 @@ textarea{width:100%;min-height:calc(100vh - 220px);background:var(--bg);color:va
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
+let aliases = {};
 let notes = [], folders = [], current = null, source = "", editing = false, dirty = false;
 let editOnOpen = null;  // path to open straight into the editor once loaded (new notes)
 const openFolders = new Set(JSON.parse(localStorage.getItem("openFolders") || "[]"));
@@ -165,6 +166,10 @@ function resolve(target, from) {
   for (const n of notes) {
     if (lc(n) === same) return n;
     if (lc(n).endsWith("/" + lc(t)) && (!best || n.length < best.length)) best = n;
+  }
+  if (!best) {  // frontmatter aliases
+    const name = lc(t.slice(0, -3));
+    for (const [p, list] of Object.entries(aliases)) if (list.some(a => lc(a) === name)) return p;
   }
   return best;
 }
@@ -318,6 +323,8 @@ function renderList(lines, i, from, base, done) {
 }
 
 function render(src, from) {
+  // %%comments%% are hidden; keep their newlines so task line numbers stay right
+  src = src.replace(/%%[\s\S]*?%%/g, m => m.replace(/[^\n]/g, ""));
   const lines = src.replace(/\r/g, "").split("\n");
   let out = "", start = 0;
   if (lines[0] === "---") {
@@ -466,6 +473,7 @@ async function loadTree() {
   const t = await (await api("GET", "/api/tree")).json();
   notes = t.notes;
   folders = t.folders;
+  aliases = t.aliases || {};
   drawSide();
 }
 
@@ -896,6 +904,9 @@ $("#search").addEventListener("keydown", e => {
 $("#new").onclick = () => { const n = prompt("New note name (use / for folders):"); if (n) createNote(n); };
 $("#settings").onclick = () => { location.hash = "settings"; };
 $("#menu").onclick = () => document.body.classList.toggle("side");
+
+// Give the device the time (it has no battery-backed clock); harmless if it already knows
+api("POST", "/api/time?utc=" + Math.floor(Date.now() / 1000) + "&offset=" + -new Date().getTimezoneOffset()).catch(() => {});
 
 loadTree().then(route).catch(e => {
   $("#main").innerHTML = '<div class="page"><p class="empty">' + esc(e.message) + '</p><p class="empty"><a href="#settings" style="color:var(--accent)">Device settings</a></p></div>';
