@@ -96,6 +96,22 @@ The pin map is in [`src/board.h`](src/board.h). Other CYD variants should work o
 
 Any FAT32 or exFAT microSD card works. The app can also format the card for you.
 
+## Installing a release
+
+Each [release](https://github.com/Dagamant/ObCYDian/releases) has two images:
+
+- `ObCYDian-vX.Y.Z-full.bin` is for a first install. It holds the bootloader, partition table and app, and is flashed at offset `0x0`. It also erases the saved settings (WiFi, touch calibration):
+  ```sh
+  esptool.py --chip esp32 --port /dev/ttyUSB0 --baud 921600 write_flash 0x0 ObCYDian-vX.Y.Z-full.bin
+  ```
+  A browser flasher such as [ESP Web Tools](https://esp.huhn.me/) also works. Choose offset `0x0`.
+- `ObCYDian-vX.Y.Z-app.bin` updates a device that already runs ObCYDian, and keeps its settings:
+  ```sh
+  esptool.py --chip esp32 --port /dev/ttyUSB0 --baud 921600 write_flash 0x10000 ObCYDian-vX.Y.Z-app.bin
+  ```
+
+Your notes live on the SD card and are never touched by flashing.
+
 ## Building and flashing
 
 You need [PlatformIO](https://platformio.org/):
