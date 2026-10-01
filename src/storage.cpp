@@ -322,7 +322,7 @@ bool renameNote(const std::string& from, const std::string& to, int* linksUpdate
     std::vector<std::pair<size_t, size_t>> ranges;  // target text spans
   };
   std::vector<Fix> fixes;
-  for (const auto& note : std::vector<std::string>(index_)) {
+  for (const auto& note : index_) {
     std::string text;
     if (!readFile(note, text)) continue;
     Fix fix{note, {}};
@@ -420,7 +420,7 @@ std::vector<Hit> searchText(const std::string& query, size_t maxResults) {
   if (query.empty()) return out;
   std::string q;
   for (char c : query) q += tolower((unsigned char)c);
-  for (const auto& note : std::vector<std::string>(index_)) {
+  for (const auto& note : index_) {
     std::string text;
     if (!readFile(note, text)) continue;
     std::string lower = text;
@@ -466,7 +466,7 @@ std::string createNote(const std::string& dir, const std::string& nameOrPath) {
   if (!endsWithCI(path, ".md")) path += ".md";
   if (exists(path)) return path;
   if (!writeFile(path, "")) return "";
-  rescan();
+  indexAdd(path);
   return path;
 }
 
@@ -511,6 +511,35 @@ static void scanDir(const std::string& dir, int depth) {
   }
 }
 
+// Adds `note`'s frontmatter aliases to the alias index (only notes starting with ---)
+static void readAliases(const std::string& note) {
+  std::string head;
+  if (!readFile(note, head, 2048) || head.compare(0, 3, "---") != 0) return;
+  for (auto& a : frontmatterList(head, "aliases")) aliases_.push_back({a, note});
+  for (auto& a : frontmatterList(head, "alias")) aliases_.push_back({a, note});
+}
+
+void indexAdd(const std::string& path) {
+  if (isMarkdown(path.c_str())) {
+    if (std::find(index_.begin(), index_.end(), path) == index_.end())
+      index_.insert(std::upper_bound(index_.begin(), index_.end(), path, lessCaseInsensitive), path);
+    indexUpdate(path);
+  } else if (isImageName(path) && std::find(attachments_.begin(), attachments_.end(), path) == attachments_.end()) {
+    attachments_.push_back(path);
+  }
+  // Any new folders on the way
+  for (std::string d = parentDir(path); d != "/"; d = parentDir(d))
+    if (std::find(folders_.begin(), folders_.end(), d) == folders_.end())
+      folders_.insert(std::upper_bound(folders_.begin(), folders_.end(), d, lessCaseInsensitive), d);
+  generation_++;
+}
+
+void indexUpdate(const std::string& path) {
+  aliases_.erase(std::remove_if(aliases_.begin(), aliases_.end(), [&](auto& a) { return a.second == path; }), aliases_.end());
+  readAliases(path);
+  generation_++;
+}
+
 void rescan() {
   index_.clear();
   folders_.clear();
@@ -523,12 +552,12 @@ void rescan() {
   std::sort(index_.begin(), index_.end(), lessCaseInsensitive);
   std::sort(folders_.begin(), folders_.end(), lessCaseInsensitive);
   // Aliases live in frontmatter, so only the start of each note needs reading
-  for (auto& n : index_) {
-    std::string head;
-    if (!readFile(n, head, 2048)) continue;
-    for (auto& a : frontmatterList(head, "aliases")) aliases_.push_back({a, n});
-    for (auto& a : frontmatterList(head, "alias")) aliases_.push_back({a, n});
-  }
+  for (auto& n : index_) readAliases(n);
+  // The lists grew by doubling; give the slack back
+  index_.shrink_to_fit();
+  folders_.shrink_to_fit();
+  aliases_.shrink_to_fit();
+  attachments_.shrink_to_fit();
   generation_++;
   Serial.printf("[sd] indexed %u notes in %lu ms\n", (unsigned)index_.size(), millis() - t);
 }
@@ -592,7 +621,7 @@ std::vector<std::string> search(const std::string& query, size_t maxResults) {
 
 std::vector<Hit> backlinks(const std::string& path) {
   std::vector<Hit> out;
-  for (const auto& note : std::vector<std::string>(index_)) {
+  for (const auto& note : index_) {
     if (note == path) continue;
     std::string text;
     if (!readFile(note, text)) continue;

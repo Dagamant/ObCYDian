@@ -667,7 +667,8 @@ async function showFolder(dir) {
 }
 
 async function loadTree() {
-  const t = await (await api("GET", "/api/tree")).json();
+  // The tree request also gives the device the time (it has no battery-backed clock)
+  const t = await (await api("GET", "/api/tree?utc=" + Math.floor(Date.now() / 1000) + "&offset=" + -new Date().getTimezoneOffset())).json();
   notes = t.notes;
   folders = t.folders;
   aliases = t.aliases || {};
@@ -1108,9 +1109,6 @@ $("#new").onclick = () => { const n = prompt("New note name (use / for folders):
 $("#settings").onclick = () => { location.hash = "settings"; };
 $("#graphbtn").onclick = () => { location.hash = "graph"; };
 $("#menu").onclick = () => document.body.classList.toggle("side");
-
-// Give the device the time (it has no battery-backed clock); harmless if it already knows
-api("POST", "/api/time?utc=" + Math.floor(Date.now() / 1000) + "&offset=" + -new Date().getTimezoneOffset()).catch(() => {});
 
 loadTree().then(route).catch(e => {
   $("#main").innerHTML = '<div class="page"><p class="empty">' + esc(e.message) + '</p><p class="empty"><a href="#settings" style="color:var(--accent)">Device settings</a></p></div>';

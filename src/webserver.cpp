@@ -99,6 +99,34 @@ void sendJson(int code, const std::string& body) {
 
 void sendError(int code, const char* msg) { sendJson(code, "{\"error\":" + q(msg) + "}"); }
 
+// Streams a large JSON response in ~1 KB chunks (chunked encoding) instead of building it
+// all in RAM first.
+class JsonOut {
+ public:
+  JsonOut() {
+    server.sendHeader("Cache-Control", "no-store");
+    server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    server.send(200, "application/json", "");
+  }
+  ~JsonOut() {
+    flush();
+    server.sendContent("");  // end of the chunked response
+  }
+  JsonOut& operator<<(const std::string& s) {
+    buf_ += s;
+    if (buf_.size() > 1024) flush();
+    return *this;
+  }
+  JsonOut& operator<<(const char* s) { return *this << std::string(s); }
+
+ private:
+  void flush() {
+    if (!buf_.empty()) server.sendContent(buf_.data(), buf_.size());
+    buf_.clear();
+  }
+  std::string buf_;
+};
+
 bool requireCard() {
   power::keepAwake();  // web use counts as activity for the sleep timer
   if (storage::state() == storage::State::Mounted) return true;
@@ -142,34 +170,46 @@ void handleStatus() {
   sendJson(200, j);
 }
 
+bool syncTimeFromArgs();
+
 void handleTree() {
+  if (server.hasArg("utc")) syncTimeFromArgs();
   if (!requireCard()) return;
-  std::string j = "{\"folders\":[";
+  JsonOut out;
+  out << "{\"folders\":[";
   bool first = true;
   for (auto& f : storage::folders()) {
-    j += (first ? "" : ",") + q(f);
+    out << (first ? "" : ",") << q(f);
     first = false;
   }
-  j += "],\"notes\":[";
+  out << "],\"notes\":[";
   first = true;
   for (auto& n : storage::notes()) {
-    j += (first ? "" : ",") + q(n);
+    out << (first ? "" : ",") << q(n);
     first = false;
   }
-  j += "],\"aliases\":{";
-  first = true;
+  out << "],\"aliases\":{";
   std::string lastPath;
   for (auto& a : storage::aliases()) {  // grouped by note: {"/path.md": ["alias", ...]}
     if (a.second != lastPath) {
-      j += std::string(lastPath.empty() ? "" : "],") + q(a.second) + ":[";
+      out << (lastPath.empty() ? "" : "],") << q(a.second) << ":[";
       lastPath = a.second;
       first = true;
     }
-    j += (first ? "" : ",") + q(a.first);
+    out << (first ? "" : ",") << q(a.first);
     first = false;
   }
-  j += lastPath.empty() ? "}}" : "]}}";
-  sendJson(200, j);
+  out << (lastPath.empty() ? "}}" : "]}}");
+}
+
+// Browsers send their clock (UTC seconds + offset) so the device knows the date
+bool syncTimeFromArgs() {
+  long utc = atol(arg("utc").c_str());
+  int offset = atoi(arg("offset").c_str());
+  if (utc < 1700000000) return false;
+  if (!wallclock::valid() || labs((long)time(nullptr) - utc) > 120) wallclock::set(utc, offset);
+  else wallclock::setOffset(offset);
+  return true;
 }
 
 void handleTime() {
@@ -207,7 +247,8 @@ void handlePutNote() {
   bool existed = storage::exists(path);
   std::string body = server.arg("plain").c_str();
   if (!storage::writeFile(path, body)) return sendError(500, "Write failed");
-  if (!existed) storage::rescan();
+  if (!existed) storage::indexAdd(path);
+  else storage::indexUpdate(path);  // aliases may have changed
   Serial.printf("[web] saved %s (%u bytes)\n", path.c_str(), (unsigned)body.size());
   app::externalChange(path);
   sendJson(200, "{\"path\":" + q(path) + "}");
@@ -292,14 +333,16 @@ void handleDeleteFolder() {
 void handleSearch() {
   if (!requireCard()) return;
   std::string query = arg("q");
-  std::string j = "[";
+  auto hits = storage::searchText(query, 60);
+  JsonOut out;
+  out << "[";
   bool first = true;
-  for (auto& h : storage::searchText(query, 60)) {
-    j += std::string(first ? "" : ",") + "{\"path\":" + q(h.path) + ",\"line\":" + std::to_string(h.line) +
-         ",\"text\":" + q(h.text.size() > 200 ? h.text.substr(0, 200) : h.text) + "}";
+  for (auto& h : hits) {
+    out << (first ? "" : ",") << "{\"path\":" << q(h.path) << ",\"line\":" << std::to_string(h.line)
+        << ",\"text\":" << q(h.text.size() > 200 ? h.text.substr(0, 200) : h.text) << "}";
     first = false;
   }
-  sendJson(200, j + "]");
+  out << "]";
 }
 
 void handleRadio() {
@@ -329,8 +372,11 @@ void handleGraph() {
       std::string path = storage::resolveLink(target, notes[i]);
       int j = -1;
       if (!path.empty()) {
-        for (int k = 0; k < (int)notes.size(); k++)
-          if (notes[k] == path) j = k;
+        // notes are sorted case-insensitively: binary search for the index
+        auto it = std::lower_bound(notes.begin(), notes.end(), path, [](const std::string& a, const std::string& b) {
+          return strcasecmp(a.c_str(), b.c_str()) < 0;
+        });
+        if (it != notes.end() && *it == path) j = it - notes.begin();
       } else {
         size_t dot = target.find_last_of('.');
         if (dot != std::string::npos && target.size() - dot <= 5 && strcasecmp(target.c_str() + dot, ".md") != 0)
@@ -350,14 +396,15 @@ void handleGraph() {
       }
     }
   }
-  std::string j = "{\"notes\":[";
-  for (size_t i = 0; i < notes.size(); i++) j += (i ? "," : "") + q(notes[i]);
-  j += "],\"ghosts\":[";
-  for (size_t i = 0; i < ghosts.size(); i++) j += (i ? "," : "") + q(ghosts[i]);
-  j += "],\"links\":[";
+  JsonOut out;
+  out << "{\"notes\":[";
+  for (size_t i = 0; i < notes.size(); i++) out << (i ? "," : "") << q(notes[i]);
+  out << "],\"ghosts\":[";
+  for (size_t i = 0; i < ghosts.size(); i++) out << (i ? "," : "") << q(ghosts[i]);
+  out << "],\"links\":[";
   for (size_t i = 0; i < links.size(); i++)
-    j += (i ? "," : "") + std::string("[") + std::to_string(links[i].first) + "," + std::to_string(links[i].second) + "]";
-  sendJson(200, j + "]}");
+    out << (i ? "," : "") << "[" << std::to_string(links[i].first) << "," << std::to_string(links[i].second) << "]";
+  out << "]}";
 }
 
 // --- Vault backup: an uncompressed .zip streamed straight from the card. Every size is
@@ -484,7 +531,7 @@ void handleUploadChunk() {
 void handleUploadDone() {
   if (!uploadOk_) return sendError(500, "Upload failed");
   Serial.printf("[web] uploaded %s\n", uploadPath_.c_str());
-  storage::rescan();
+  storage::indexAdd(uploadPath_);
   app::externalChange(uploadPath_);
   sendJson(200, "{\"path\":" + q(uploadPath_) + "}");
 }
@@ -548,7 +595,7 @@ void startServer() {
   server.on("/api/folder/rename", HTTP_POST, handleRenameFolder);
   server.on("/api/search", HTTP_GET, handleSearch);
   server.on("/api/radio", HTTP_POST, handleRadio);
-  server.on("/api/time", HTTP_POST, handleTime);
+  server.on("/api/time", HTTP_ANY, handleTime);  // GET from the web app (see index.html)
   server.on("/api/backup.zip", HTTP_GET, handleBackup);
   server.on("/api/graph", HTTP_GET, handleGraph);
   server.on("/api/upload", HTTP_POST, handleUploadDone, handleUploadChunk);
@@ -606,14 +653,24 @@ void loop() {
       WiFi.disconnect();
       startAccessPoint();
     }
-  } else if (state_ == State::Connected && WiFi.status() != WL_CONNECTED) {
-    // Dropped: the WiFi driver keeps retrying on its own
-    static uint32_t lostAt = 0;
-    if (!lostAt) lostAt = millis();
-    if (millis() - lostAt > 2000) {
-      Serial.println("[wifi] connection lost, reconnecting");
-      WiFi.reconnect();
+  } else if (state_ == State::Connected) {
+    // Dropped: the driver auto-reconnects; only nudge it occasionally (calling reconnect()
+    // too often restarts the attempt before it can finish), and start over after a minute.
+    static uint32_t lostAt = 0, nudgedAt = 0;
+    if (WiFi.status() == WL_CONNECTED) {
+      if (lostAt) Serial.printf("[wifi] reconnected after %u s\n", (unsigned)((millis() - lostAt) / 1000));
       lostAt = 0;
+    } else if (!lostAt) {
+      lostAt = nudgedAt = millis();
+      Serial.println("[wifi] connection lost");
+    } else if (millis() - lostAt > 60000) {
+      Serial.println("[wifi] still offline, reconnecting from scratch");
+      WiFi.disconnect();
+      WiFi.begin(ssid_.c_str(), pass_.c_str());
+      lostAt = nudgedAt = millis();
+    } else if (millis() - nudgedAt > 20000) {
+      WiFi.reconnect();
+      nudgedAt = millis();
     }
   }
   if (state_ == State::AccessPoint) {

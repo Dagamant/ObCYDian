@@ -253,7 +253,7 @@ void put(WiFiClient& c, Request& r) {
   }
   Serial.printf("[dav] PUT %s (%ld bytes)\n", r.path.c_str(), r.contentLength);
   syncToast(r.path);
-  storage::rescan();
+  storage::indexAdd(r.path);
   app::externalChange(r.path);
   status(c, existed ? 204 : 201, existed ? "No Content" : "Created");
 }

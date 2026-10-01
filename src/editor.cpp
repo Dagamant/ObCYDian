@@ -1038,7 +1038,7 @@ void EditorScreen::drawContent() {
   placePopup();
   drawRegion(0, viewH());
   if (micros() - t0 > 60000)
-    Serial.printf("[editor] slow redraw: layout %lu us, render %lu us\n", t1 - t0, micros() - t1);
+    Serial.printf("[editor] slow redraw: layout %u us, render %u us\n", (unsigned)(t1 - t0), (unsigned)(micros() - t1));
 }
 
 void EditorScreen::drawLineOnly(int line) {
@@ -1609,8 +1609,8 @@ void EditorScreen::afterChange(int prevLine, int editedLine, bool structural) {
   drawStatus();
   uint32_t t3 = micros();
   if (t3 - t0 > 60000)
-    Serial.printf("[editor] relayout %lu us, popup/scroll %lu us, draw %lu us (full=%d)\n", t1 - t0,
-                  t2 - t1, t3 - t2, structural || heights || scrolled || popup_ || hadPopup);
+    Serial.printf("[editor] relayout %u us, popup/scroll %u us, draw %u us (full=%d)\n", (unsigned)(t1 - t0),
+                  (unsigned)(t2 - t1), (unsigned)(t3 - t2), structural || heights || scrolled || popup_ || hadPopup);
 }
 
 // ===========================================================================
@@ -1623,7 +1623,7 @@ void EditorScreen::onKey(const Event& e) {
     uint32_t t0;
     ~Timer() {
       uint32_t ms = millis() - t0;
-      if (ms > 80) Serial.printf("[editor] slow key: %lu ms\n", ms);
+      if (ms > 80) Serial.printf("[editor] slow key: %u ms\n", (unsigned)ms);
     }
   } timer{t0};
   if (reading_) return readingKey(e);

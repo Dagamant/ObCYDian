@@ -53,7 +53,7 @@ Layouts parseReportMap(const uint8_t* d, size_t len) {
   } g;
   std::vector<Globals> stack;
   std::vector<uint32_t> usages;
-  uint32_t uMin = 0, uMax = 0;
+  uint32_t uMin = 0;
   bool haveRange = false;
   int app = 0;  // 1 keyboard, 2 mouse in the current application collection
   int depth = 0;
@@ -114,7 +114,7 @@ Layouts parseReportMap(const uint8_t* d, size_t len) {
       uint32_t full = n == 4 ? v : (g.page << 16) | v;
       if (tag == 0) usages.push_back(full);
       if (tag == 1) uMin = full, haveRange = true;
-      if (tag == 2) uMax = full, haveRange = true;
+      if (tag == 2) haveRange = true;
     } else if (type == 0) {  // main
       if (tag == 10) {  // collection
         if (v == 1 && depth == 0 && !usages.empty()) {

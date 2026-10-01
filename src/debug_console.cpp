@@ -10,6 +10,7 @@
 #include "display.h"
 #include "input.h"
 #include "storage.h"
+#include "vault.h"
 #include "touch_calib.h"
 
 namespace debug_console {
@@ -250,6 +251,24 @@ static void run(const std::string& line) {
       for (int i = 0; i < 16; i++) sum += analogReadMilliVolts(pin);
       Serial.printf("GPIO%d: %u mV\n", pin, sum / 16);
     }
+  } else if (s == "perf") {
+    // Times the whole-vault operations
+    uint32_t t = millis();
+    storage::rescan();
+    Serial.printf("rescan: %u ms (%u notes)\n", (unsigned)(millis() - t), (unsigned)storage::notes().size());
+    t = millis();
+    size_t n = vault::tags().size();
+    Serial.printf("tags: %u ms (%u tags)\n", (unsigned)(millis() - t), (unsigned)n);
+    t = millis();
+    n = vault::tasks(false).size();
+    Serial.printf("tasks: %u ms (%u open)\n", (unsigned)(millis() - t), (unsigned)n);
+    t = millis();
+    n = storage::searchText("garden", 50).size();
+    Serial.printf("search: %u ms (%u hits)\n", (unsigned)(millis() - t), (unsigned)n);
+    t = millis();
+    n = storage::backlinks(storage::notes().empty() ? "/" : storage::notes()[storage::notes().size() / 2]).size();
+    Serial.printf("backlinks: %u ms (%u)\n", (unsigned)(millis() - t), (unsigned)n);
+    Serial.printf("heap free %u, largest %u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
   } else if (s == "sleep") {
     power::deepSleep();
   } else if (s == "screen") {

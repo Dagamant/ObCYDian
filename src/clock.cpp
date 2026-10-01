@@ -74,6 +74,7 @@ void set(time_t utc, int offsetMinutes) {
 }
 
 void setOffset(int offsetMinutes) {
+  if (offsetMinutes == offset_) return;  // nothing to save (flash writes stall the system briefly)
   offset_ = offsetMinutes;
   saveLastKnown();
 }

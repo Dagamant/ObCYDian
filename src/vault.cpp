@@ -79,21 +79,22 @@ std::string trim(const std::string& s) {
 
 std::vector<Tag> tags() {
   std::vector<Tag> out;
-  auto add = [&](std::string name, const std::string& path, int line, const std::string& text) {
-    while (!name.empty() && name[0] == '#') name.erase(0, 1);
-    if (name.empty()) return;
-    for (auto& t : out) {
-      if (strcasecmp(t.name.c_str(), name.c_str()) == 0) {
-        if (t.hits.empty() || t.hits.back().path != path) t.hits.push_back({path, line, text});
-        return;
-      }
-    }
-    out.push_back({name, {{path, line, text}}});
-  };
-  for (const auto& note : std::vector<std::string>(storage::notes())) {
+  const auto& notes = storage::notes();
+  for (size_t ni = 0; ni < notes.size(); ni++) {
     std::string text;
-    if (!storage::readFile(note, text)) continue;
-    for (auto& t : storage::frontmatterList(text, "tags")) add(t, note, 0, "tags: " + t);
+    if (!storage::readFile(notes[ni], text)) continue;
+    auto add = [&](std::string name, int line) {
+      while (!name.empty() && name[0] == '#') name.erase(0, 1);
+      if (name.empty()) return;
+      for (auto& t : out) {
+        if (strcasecmp(t.name.c_str(), name.c_str()) == 0) {
+          if (t.refs.empty() || t.refs.back().first != ni) t.refs.push_back({(uint16_t)ni, (uint16_t)line});
+          return;
+        }
+      }
+      out.push_back({name, {{(uint16_t)ni, (uint16_t)line}}});
+    };
+    for (auto& t : storage::frontmatterList(text, "tags")) add(t, 0);
     forEachProseLine(text, [&](int n, const std::string& line) {
       bool code = false;
       for (size_t i = 0; i < line.size(); i++) {
@@ -102,12 +103,30 @@ std::vector<Tag> tags() {
         size_t j = i + 1;
         if (j >= line.size() || !(isalpha((unsigned char)line[j]) || line[j] == '_' || (uint8_t)line[j] >= 0x80)) continue;
         while (j < line.size() && (isalnum((unsigned char)line[j]) || strchr("_-/", line[j]) || (uint8_t)line[j] >= 0x80)) j++;
-        add(line.substr(i + 1, j - i - 1), note, n, trim(line));
+        add(line.substr(i + 1, j - i - 1), n);
         i = j;
       }
     });
   }
   std::sort(out.begin(), out.end(), [](const Tag& a, const Tag& b) { return strcasecmp(a.name.c_str(), b.name.c_str()) < 0; });
+  return out;
+}
+
+std::vector<storage::Hit> tagHits(const Tag& tag) {
+  std::vector<storage::Hit> out;
+  const auto& notes = storage::notes();
+  for (auto& r : tag.refs) {
+    if (r.first >= notes.size()) continue;
+    std::string text, line;
+    storage::readFile(notes[r.first], text, 16 * 1024);
+    size_t i = 0;
+    for (int n = 0; n < r.second && i != std::string::npos; n++) {
+      i = text.find('\n', i);
+      if (i != std::string::npos) i++;
+    }
+    if (i != std::string::npos) line = trim(text.substr(i, text.find('\n', i) == std::string::npos ? std::string::npos : text.find('\n', i) - i));
+    out.push_back({notes[r.first], r.second, line});
+  }
   return out;
 }
 
@@ -130,16 +149,17 @@ static size_t taskBox(const std::string& line) {
   return std::string::npos;
 }
 
-std::vector<Task> tasks(bool includeDone) {
+std::vector<Task> tasks(bool includeDone, size_t maxResults) {
   std::vector<Task> out;
-  for (const auto& note : std::vector<std::string>(storage::notes())) {
+  for (const auto& note : storage::notes()) {
+    if (out.size() >= maxResults) break;
     std::string text;
     if (!storage::readFile(note, text)) continue;
     forEachProseLine(text, [&](int n, const std::string& line) {
       size_t b = taskBox(line);
       if (b == std::string::npos) return;
       bool done = line[b + 1] != ' ';
-      if (done && !includeDone) return;
+      if ((done && !includeDone) || out.size() >= maxResults) return;
       out.push_back({note, n, done, trim(line.substr(b + 3))});
     });
   }
@@ -259,7 +279,7 @@ std::string dailyNote(int offsetDays, bool create) {
   if (storage::exists(tpl)) body = applyTemplate(tpl, name);
   else body = "# " + wallclock::format("dddd, MMMM D, YYYY", day) + "\n\n";
   if (!storage::writeFile(path, body)) return "";
-  storage::rescan();
+  storage::indexAdd(path);
   return path;
 }
 

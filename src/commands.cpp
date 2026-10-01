@@ -14,6 +14,9 @@ namespace app {
 
 namespace {
 
+// Whole-vault scans take a moment on big vaults: say so before starting
+void busy(const char* what) { toast(what, 400); }
+
 std::string folderLabel(const std::string& path) {
   std::string dir = storage::parentDir(path);
   return dir == "/" ? "" : dir.substr(1);
@@ -78,6 +81,7 @@ void showOutline(const std::string& path) {
 }
 
 void showTags() {
+  busy("Collecting tags...");
   auto tags = vault::tags();
   PickerData d;
   d.title = "Tags";
@@ -86,17 +90,18 @@ void showTags() {
   for (auto& t : tags) {
     PickItem it;
     it.label = "#" + t.name;
-    it.detail = std::to_string(t.hits.size()) + (t.hits.size() == 1 ? " note" : " notes");
+    it.detail = std::to_string(t.refs.size()) + (t.refs.size() == 1 ? " note" : " notes");
     d.items.push_back(it);
   }
-  d.onPick = [tags](int i) { hitsList("#" + tags[i].name, "", tags[i].hits); };
+  d.onPick = [tags](int i) { hitsList("#" + tags[i].name, "", vault::tagHits(tags[i])); };
   pick(std::move(d));
 }
 
 void showTasks() {
+  busy("Collecting tasks...");
   auto tasks = std::make_shared<std::vector<vault::Task>>(vault::tasks(false));
   PickerData d;
-  d.title = "Open tasks (" + std::to_string(tasks->size()) + ")";
+  d.title = "Open tasks (" + std::to_string(tasks->size()) + (tasks->size() >= 200 ? "+" : "") + ")";
   d.empty = "No open tasks. Nice!";
   for (auto& t : *tasks) {
     PickItem it = noteItem(t.path);
@@ -241,6 +246,7 @@ void commandPalette(bool filter) {
     cmds.push_back({c.editing ? "Reading view" : "Edit note", "Ctrl+E", [p, c] { c.editing ? viewNote(p) : editNote(p); }});
     cmds.push_back({"Outline", "", [p] { showOutline(p); }});
     cmds.push_back({"Backlinks", "", [p] {
+                      busy("Finding backlinks...");
                       hitsList("Backlinks: " + storage::baseName(p), "No other notes link here", storage::backlinks(p));
                     }});
     cmds.push_back({vault::isBookmarked(p) ? "Remove bookmark" : "Bookmark this note", "", [p] {

@@ -10,11 +10,14 @@
 namespace vault {
 
 // --- Tags (inline #tags and frontmatter "tags:")
+// Kept compact (a big vault can have thousands of tag uses): each use is the note's index
+// in storage::notes() and a line number; tagHits() fetches the text for one tag on demand.
 struct Tag {
   std::string name;  // without '#'
-  std::vector<storage::Hit> hits;
+  std::vector<std::pair<uint16_t, uint16_t>> refs;  // (note index, line), one per note
 };
 std::vector<Tag> tags();  // sorted by name
+std::vector<storage::Hit> tagHits(const Tag& tag);
 
 // --- Tasks ("- [ ] ..." list items)
 struct Task {
@@ -23,7 +26,7 @@ struct Task {
   bool done;
   std::string text;  // without the "- [ ]" marker
 };
-std::vector<Task> tasks(bool includeDone);
+std::vector<Task> tasks(bool includeDone, size_t maxResults = 200);
 // Ticks or unticks the task on `line` of `path`. Returns false if that line isn't a task.
 bool setTaskDone(const std::string& path, int line, bool done);
 

@@ -100,6 +100,9 @@ std::string untitledPath(const std::string& dir);
 
 // Vault index: every .md path under the root, rebuilt by rescan().
 void rescan();
+// Cheap index updates for a single file (note or image) instead of a full rescan.
+void indexAdd(const std::string& path);
+void indexUpdate(const std::string& path);  // re-read a note's aliases
 const std::vector<std::string>& notes();
 const std::vector<std::string>& folders();  // every folder path except "/"
 // Increments whenever the index changes; lets caches of resolved links invalidate.
