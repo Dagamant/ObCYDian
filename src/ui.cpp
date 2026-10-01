@@ -4,14 +4,22 @@ namespace ui {
 
 static constexpr int kIconHit = 48;
 
-void topBar(const std::string& title, Icon left, Icon right) {
+static constexpr int kSlotW = 44;
+
+void topBar(const std::string& title, Icon left, Icon right1, Icon right2, Icon right3) {
   const int w = gfx.width(), H = theme::BAR_H;
   gfx.fillRect(0, 0, w, H - 1, theme::BAR);
   gfx.drawFastHLine(0, H - 1, w, theme::BORDER);
   if (left != Icon::None) icon(gfx, left, 22, H / 2, theme::TEXT);
-  if (right != Icon::None) icon(gfx, right, w - 24, H / 2, theme::TEXT);
+  const Icon rights[3] = {right1, right2, right3};
+  int slots = 0;
+  for (int i = 0; i < 3; i++) {
+    if (rights[i] == Icon::None) continue;
+    icon(gfx, rights[i], w - kSlotW / 2 - 2 - i * kSlotW, H / 2, theme::TEXT);
+    slots = i + 1;
+  }
   int tx = left != Icon::None ? kIconHit : theme::MARGIN;
-  int maxW = w - tx - (right != Icon::None ? kIconHit : theme::MARGIN);
+  int maxW = w - tx - (slots ? slots * kSlotW + 4 : theme::MARGIN);
   gfx.setFont(font::uiBold());
   gfx.setTextColor(theme::TEXT_BRIGHT);
   gfx.setTextDatum(textdatum_t::middle_left);
@@ -20,7 +28,13 @@ void topBar(const std::string& title, Icon left, Icon right) {
 }
 
 bool hitLeft(int x, int y) { return y < theme::BAR_H && x < kIconHit; }
-bool hitRight(int x, int y) { return y < theme::BAR_H && x >= gfx.width() - kIconHit; }
+int hitRightSlot(int x, int y) {
+  if (y >= theme::BAR_H) return -1;
+  int fromRight = gfx.width() - 2 - x;
+  if (fromRight < 0) return 0;
+  int slot = fromRight / kSlotW;
+  return slot < 3 ? slot : -1;
+}
 
 void icon(LovyanGFX& g, Icon i, int cx, int cy, uint16_t c) {
   switch (i) {
@@ -39,6 +53,23 @@ void icon(LovyanGFX& g, Icon i, int cx, int cy, uint16_t c) {
       break;
     case Icon::Files:
       for (int k = -1; k <= 1; k++) g.fillRoundRect(cx - 9, cy + k * 6 - 1, 18, 3, 1, c);
+      break;
+    case Icon::Pencil:
+      g.drawWideLine(cx - 6, cy + 6, cx + 5, cy - 5, 2.2f, c);
+      g.fillTriangle(cx - 9, cy + 9, cx - 8, cy + 4, cx - 4, cy + 8, c);
+      g.drawWideLine(cx + 4, cy - 8, cx + 8, cy - 4, 1.2f, c);
+      break;
+    case Icon::Eye:
+      g.drawEllipse(cx, cy, 11, 6, c);
+      g.drawEllipse(cx, cy, 10, 5, c);
+      g.fillCircle(cx, cy, 3, c);
+      break;
+    case Icon::More:
+      for (int k = -1; k <= 1; k++) g.fillCircle(cx, cy + k * 6, 2, c);
+      break;
+    case Icon::Plus:
+      g.fillRoundRect(cx - 9, cy - 1, 18, 3, 1, c);
+      g.fillRoundRect(cx - 1, cy - 9, 3, 18, 1, c);
       break;
     case Icon::None:
       break;

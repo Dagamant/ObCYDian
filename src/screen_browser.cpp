@@ -3,6 +3,7 @@
 static constexpr int kRowH = 44;
 
 void BrowserScreen::open(const std::string& dir, int scroll) {
+  if (dir != dir_) sel_ = -1;
   dir_ = dir;
   entries_ = storage::list(dir_);
   scroll_ = std::max(0, std::min(scroll, maxScroll()));
@@ -16,8 +17,9 @@ int BrowserScreen::maxScroll() const {
 void BrowserScreen::draw() {
   // "Vault > Projects > Ideas"
   std::string title = "Vault";
-  for (char c : md::toAscii(dir_ == "/" ? "" : dir_)) title += c == '/' ? std::string(" > ") : std::string(1, c);
-  ui::topBar(title, dir_ == "/" ? ui::Icon::None : ui::Icon::Back, ui::Icon::Gear);
+  for (char c : tf::toAscii(dir_ == "/" ? "" : dir_)) title += c == '/' ? std::string(" > ") : std::string(1, c);
+  ui::topBar(title, dir_ == "/" ? ui::Icon::None : ui::Icon::Back, ui::Icon::Gear,
+             storage::state() == storage::State::Mounted ? ui::Icon::Plus : ui::Icon::None);
 
   const int top = theme::BAR_H;
   action_ = {};
@@ -60,6 +62,7 @@ void BrowserScreen::drawList() {
       int y = i * kRowH - scroll_ - off;
       if (y > s.height()) break;
       const auto& e = entries_[i];
+      if (i == sel_) s.fillRoundRect(4, y + 2, w - 8, kRowH - 4, 6, theme::ACCENT_BG);
       if (e.isDir) {
         ui::folderIcon(s, theme::MARGIN, y + 12, theme::FOLDER);
       } else {
@@ -69,7 +72,7 @@ void BrowserScreen::drawList() {
       s.setFont(font::ui());
       s.setTextColor(theme::TEXT);
       s.setTextDatum(textdatum_t::middle_left);
-      s.drawString(ui::ellipsize(md::toAscii(name), w - 90, font::ui()).c_str(), 44,
+      s.drawString(ui::ellipsize(tf::toAscii(name), w - 90, font::ui()).c_str(), 44,
                    y + kRowH / 2);
       if (e.isDir) {
         int cx = w - 24, cy = y + kRowH / 2;
@@ -90,7 +93,9 @@ void BrowserScreen::drawList() {
 
 void BrowserScreen::onTap(int x, int y) {
   if (ui::hitLeft(x, y) && dir_ != "/") return app::back();
-  if (ui::hitRight(x, y)) return app::openTools();
+  int slot = ui::hitRightSlot(x, y);
+  if (slot == 0) return app::openTools();
+  if (slot == 1 && storage::state() == storage::State::Mounted) return newNote();
   if (y < theme::BAR_H) return;
 
   if (action_.w && action_.contains(x, y)) {
@@ -113,7 +118,10 @@ void BrowserScreen::onTap(int x, int y) {
     return;
   }
 
-  int i = (y - theme::BAR_H + scroll_) / kRowH;
+  activate((y - theme::BAR_H + scroll_) / kRowH);
+}
+
+void BrowserScreen::activate(int i) {
   if (i < 0 || i >= (int)entries_.size()) return;
   const auto& e = entries_[i];
   std::string path = storage::joinPath(dir_, e.name);
@@ -121,6 +129,43 @@ void BrowserScreen::onTap(int x, int y) {
     app::openFolder(path);
   } else {
     app::openNote(path);
+  }
+}
+
+void BrowserScreen::newNote() {
+  std::string p = storage::createNote(dir_, storage::baseName(storage::untitledPath(dir_)));
+  if (p.empty()) return app::toast("Couldn't create note");
+  app::editNote(p);
+}
+
+void BrowserScreen::onKey(const input::Event& e) {
+  using namespace input;
+  const int n = entries_.size();
+  const int viewH = gfx.height() - theme::BAR_H;
+  switch (e.key) {
+    case K_UP:
+    case K_DOWN:
+    case K_PGUP:
+    case K_PGDN: {
+      if (!n) return;
+      int step = (e.key == K_PGUP || e.key == K_PGDN) ? viewH / kRowH : 1;
+      if (e.key == K_UP || e.key == K_PGUP) step = -step;
+      sel_ = sel_ < 0 ? 0 : std::max(0, std::min(n - 1, sel_ + step));
+      int top = sel_ * kRowH, bot = top + kRowH;
+      if (top < scroll_) scroll_ = top;
+      if (bot > scroll_ + viewH) scroll_ = bot - viewH;
+      return drawList();
+    }
+    case K_ENTER:
+    case K_RIGHT:
+      return activate(sel_);
+    case K_BACKSPACE:
+    case K_ESC:
+    case K_LEFT:
+      if (dir_ != "/") app::back();
+      return;
+    default:
+      return;
   }
 }
 

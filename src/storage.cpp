@@ -13,6 +13,12 @@ static SPIClass sdSpi(VSPI);
 static SdFs sd;
 static State st = State::NoCard;
 static std::vector<std::string> index_;
+static uint32_t generation_ = 0;
+
+static bool endsWithCI(const std::string& s, const std::string& suffix) {
+  return s.size() >= suffix.size() &&
+         strcasecmp(s.c_str() + s.size() - suffix.size(), suffix.c_str()) == 0;
+}
 
 static SdSpiConfig spiConfig() {
   return SdSpiConfig(pins::SD_CS, DEDICATED_SPI, SD_SCK_MHZ(20), &sdSpi);
@@ -136,11 +142,114 @@ bool readFile(const std::string& path, std::string& out, size_t maxBytes) {
 bool writeFile(const std::string& path, const std::string& data) {
   if (st != State::Mounted) return false;
   mkdirs(parentDir(path));
+  std::string tmp = path + ".tmp";
   FsFile f;
-  if (!f.open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC)) return false;
+  if (!f.open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC)) return false;
   size_t n = f.write(data.data(), data.size());
+  bool ok = n == data.size() && f.sync();
   f.close();
-  return n == data.size();
+  if (!ok) {
+    sd.remove(tmp.c_str());
+    return false;
+  }
+  if (sd.exists(path.c_str()) && !sd.remove(path.c_str())) return false;
+  return sd.rename(tmp.c_str(), path.c_str());
+}
+
+int64_t fileSize(const std::string& path) {
+  if (st != State::Mounted) return -1;
+  FsFile f;
+  if (!f.open(path.c_str(), O_RDONLY)) return -1;
+  int64_t n = f.fileSize();
+  f.close();
+  return n;
+}
+
+bool remove(const std::string& path) {
+  if (st != State::Mounted || !sd.remove(path.c_str())) return false;
+  rescan();
+  return true;
+}
+
+bool rename(const std::string& from, const std::string& to) {
+  if (st != State::Mounted || sd.exists(to.c_str())) return false;
+  mkdirs(parentDir(to));
+  if (!sd.rename(from.c_str(), to.c_str())) return false;
+  rescan();
+  return true;
+}
+
+bool renameNote(const std::string& from, const std::string& to, int* linksUpdated) {
+  *linksUpdated = 0;
+  // 1. With the old index, find every [[target]] that points at `from`.
+  struct Fix {
+    std::string note;
+    std::vector<std::pair<size_t, size_t>> ranges;  // target text spans
+  };
+  std::vector<Fix> fixes;
+  for (const auto& note : std::vector<std::string>(index_)) {
+    std::string text;
+    if (!readFile(note, text)) continue;
+    Fix fix{note, {}};
+    for (size_t a = text.find("[["); a != std::string::npos; a = text.find("[[", a + 2)) {
+      size_t b = text.find("]]", a + 2);
+      size_t nl = text.find('\n', a);
+      if (b == std::string::npos || (nl != std::string::npos && nl < b)) continue;
+      size_t end = std::min(text.find_first_of("|#", a + 2), b);
+      std::string target = text.substr(a + 2, end - a - 2);
+      if (!target.empty() && resolveLink(target, note) == from) fix.ranges.push_back({a + 2, end});
+    }
+    if (!fix.ranges.empty()) fixes.push_back(fix);
+  }
+  // 2. Rename, then rewrite the links with the new (shortest unambiguous) name.
+  if (!rename(from, to)) return false;
+  const std::string newText = linkText(to);
+  for (auto& fix : fixes) {
+    std::string path = fix.note == from ? to : fix.note;
+    std::string text;
+    if (!readFile(path, text)) continue;
+    for (auto it = fix.ranges.rbegin(); it != fix.ranges.rend(); ++it) {
+      text.replace(it->first, it->second - it->first, newText);
+      (*linksUpdated)++;
+    }
+    writeFile(path, text);
+  }
+  return true;
+}
+
+std::string sanitizeName(const std::string& name) {
+  std::string out;
+  for (char c : name) out += strchr("\\:*?\"<>|", c) || (uint8_t)c < 32 ? '-' : c;
+  while (!out.empty() && (out.back() == ' ' || out.back() == '.')) out.pop_back();
+  while (!out.empty() && (out[0] == ' ' || out[0] == '.')) out.erase(0, 1);
+  return out;
+}
+
+std::string createNote(const std::string& dir, const std::string& nameOrPath) {
+  std::string path;
+  size_t i = 0;
+  std::string base = nameOrPath[0] == '/' ? "/" : dir;
+  while (i <= nameOrPath.size()) {
+    size_t j = nameOrPath.find('/', i);
+    if (j == std::string::npos) j = nameOrPath.size();
+    std::string seg = sanitizeName(nameOrPath.substr(i, j - i));
+    if (!seg.empty()) path = path.empty() ? joinPath(base, seg) : joinPath(path, seg);
+    i = j + 1;
+  }
+  if (path.empty()) return "";
+  if (!endsWithCI(path, ".md")) path += ".md";
+  if (exists(path)) return path;
+  if (!writeFile(path, "")) return "";
+  rescan();
+  return path;
+}
+
+std::string untitledPath(const std::string& dir) {
+  for (int n = 0;; n++) {
+    std::string name = n == 0 ? "Untitled.md" : "Untitled " + std::to_string(n) + ".md";
+    std::string p = joinPath(dir, name);
+    if (!exists(p)) return p;
+  }
 }
 
 bool exists(const std::string& path) { return st == State::Mounted && sd.exists(path.c_str()); }
@@ -173,18 +282,70 @@ static void scanDir(const std::string& dir, int depth) {
 
 void rescan() {
   index_.clear();
+  generation_++;
   if (st != State::Mounted) return;
   uint32_t t = millis();
   scanDir("/", 0);
   std::sort(index_.begin(), index_.end(), lessCaseInsensitive);
+  generation_++;
   Serial.printf("[sd] indexed %u notes in %lu ms\n", (unsigned)index_.size(), millis() - t);
 }
 
 const std::vector<std::string>& notes() { return index_; }
 
-static bool endsWithCI(const std::string& s, const std::string& suffix) {
-  return s.size() >= suffix.size() &&
-         strcasecmp(s.c_str() + s.size() - suffix.size(), suffix.c_str()) == 0;
+uint32_t generation() { return generation_; }
+
+// Lower is better; -1 = no match. Prefix < word start < substring < subsequence.
+static int fuzzyScore(const std::string& name, const std::string& q) {
+  if (q.empty()) return 0;
+  std::string n, l;
+  for (char c : name) n += tolower(c);
+  for (char c : q) l += tolower(c);
+  size_t at = n.find(l);
+  if (at == 0) return 0;
+  if (at != std::string::npos) return (n[at - 1] == ' ' || n[at - 1] == '-' || n[at - 1] == '/') ? 1 : 2;
+  size_t k = 0;
+  for (char c : n)
+    if (k < l.size() && c == l[k]) k++;
+  return k == l.size() ? 3 : -1;
+}
+
+std::vector<std::string> search(const std::string& query, size_t maxResults) {
+  struct Hit {
+    int score;
+    const std::string* path;
+  };
+  std::vector<Hit> hits;
+  for (auto& p : index_) {
+    std::string name = baseName(p);
+    int sc = fuzzyScore(name, query);
+    if (sc < 0) {
+      // Also allow matching on the folder path
+      int ps = fuzzyScore(p.substr(1, p.size() - 4), query);
+      if (ps < 0) continue;
+      sc = 4 + ps;
+    }
+    hits.push_back({sc, &p});
+  }
+  std::stable_sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) {
+    if (a.score != b.score) return a.score < b.score;
+    return a.path->size() < b.path->size();
+  });
+  std::vector<std::string> out;
+  for (auto& h : hits) {
+    if (out.size() >= maxResults) break;
+    out.push_back(*h.path);
+  }
+  return out;
+}
+
+std::string linkText(const std::string& path) {
+  std::string name = baseName(path);
+  int same = 0;
+  for (auto& p : index_)
+    if (strcasecmp(baseName(p).c_str(), name.c_str()) == 0) same++;
+  if (same <= 1) return name;
+  return path.substr(1, path.size() - 4);  // vault path without leading '/' and ".md"
 }
 
 std::string resolveLink(const std::string& rawTarget, const std::string& fromPath) {

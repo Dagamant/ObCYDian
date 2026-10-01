@@ -8,7 +8,18 @@ namespace input {
 
 static std::deque<Event> queue_;
 
-void inject(const Event& e) { queue_.push_back(e); }
+void inject(const Event& e) {
+  if (queue_.size() < 256) queue_.push_back(e);
+}
+
+Event keyEvent(Key k, uint8_t mods, char ch) {
+  Event e;
+  e.type = Type::Key;
+  e.key = k;
+  e.mods = mods;
+  e.ch = ch;
+  return e;
+}
 
 bool poll(Event& e) {
   if (!queue_.empty()) {
@@ -37,7 +48,11 @@ bool poll(Event& e) {
     }
     lastX = x;
     if (dragging && y != lastY) {
-      e = {Type::Drag, (int)x, (int)y, (int)(y - lastY)};
+      e = Event();
+      e.type = Type::Drag;
+      e.x = x;
+      e.y = y;
+      e.dy = y - lastY;
       lastY = y;
       return true;
     }
@@ -45,11 +60,10 @@ bool poll(Event& e) {
   }
   if (!now && down) {
     down = false;
-    if (dragging) {
-      e = {Type::DragEnd, lastX, lastY, 0};
-    } else {
-      e = {Type::Tap, startX, startY, 0};
-    }
+    e = Event();
+    e.type = dragging ? Type::DragEnd : Type::Tap;
+    e.x = dragging ? lastX : startX;
+    e.y = dragging ? lastY : startY;
     return true;
   }
   return false;
