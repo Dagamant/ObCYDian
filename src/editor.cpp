@@ -666,12 +666,20 @@ void EditorScreen::placePopup() {
   layoutLine(cursorLine_, true, L);
   uint32_t c = cursor_ - lines_[cursorLine_].start;
   const Row& row = L.rows[L.row[c]];
-  int cy = tops_[cursorLine_] + row.top;
+  const int rowTop = tops_[cursorLine_] + row.top, rowBot = rowTop + row.h;
+  // Open on whichever side of the cursor line has room, showing as many items as fit.
+  const int n = popupItems_.size();
+  const int full = n * 28 + 8;
+  const int below = scroll_ + viewH() - rowBot - 4, above = rowTop - scroll_ - 4;
+  const bool down = below >= full || below >= above;
+  popupRows_ = std::max(1, std::min(n, ((down ? below : above) - 8) / 28));
+  popupFirst_ = std::max(0, std::min(popupFirst_, n - popupRows_));
+  if (popupSel_ < popupFirst_) popupFirst_ = popupSel_;
+  if (popupSel_ >= popupFirst_ + popupRows_) popupFirst_ = popupSel_ - popupRows_ + 1;
   popupW_ = 300;
-  popupH_ = popupItems_.size() * 28 + 8;
+  popupH_ = popupRows_ * 28 + 8;
   popupX_ = std::max(theme::MARGIN, std::min<int>(L.x[c] - 10, gfx.width() - popupW_ - 8));
-  popupY_ = cy + row.h + 2;
-  if (popupY_ + popupH_ > scroll_ + viewH()) popupY_ = cy - popupH_ - 2;
+  popupY_ = down ? rowBot + 2 : rowTop - popupH_ - 2;
 }
 
 void EditorScreen::drawPopup(LGFX_Sprite& s, int bandTop) {
@@ -680,9 +688,15 @@ void EditorScreen::drawPopup(LGFX_Sprite& s, int bandTop) {
   if (y > s.height() || y + popupH_ < 0) return;
   s.fillRoundRect(popupX_ - 1, y - 1, popupW_ + 2, popupH_ + 2, 7, theme::BORDER);
   s.fillRoundRect(popupX_, y, popupW_, popupH_, 6, theme::BG_ALT);
-  for (size_t i = 0; i < popupItems_.size(); i++) {
-    int iy = y + 4 + i * 28;
-    if ((int)i == popupSel_) s.fillRoundRect(popupX_ + 4, iy, popupW_ - 8, 28, 4, theme::ACCENT_BG);
+  const int n = popupItems_.size();
+  if (popupRows_ < n) {  // scrollbar when some suggestions are out of view
+    int track = popupH_ - 12, thumb = std::max(10, track * popupRows_ / n);
+    int ty = y + 6 + (track - thumb) * popupFirst_ / std::max(1, n - popupRows_);
+    s.fillRoundRect(popupX_ + popupW_ - 5, ty, 3, thumb, 1, theme::MUTED);
+  }
+  for (int i = popupFirst_; i < popupFirst_ + popupRows_ && i < n; i++) {
+    int iy = y + 4 + (i - popupFirst_) * 28;
+    if (i == popupSel_) s.fillRoundRect(popupX_ + 4, iy, popupW_ - 12, 28, 4, theme::ACCENT_BG);
     const std::string& path = popupItems_[i];
     std::string folder = storage::parentDir(path);
     s.setFont(font::ui());
@@ -1201,7 +1215,10 @@ void EditorScreen::updatePopup() {
       if (q.size() > 60 || q.find_first_of("|#]") != std::string::npos) return;
       popupItems_ = storage::search(q, 6);
       popup_ = !popupItems_.empty();
-      if (!was || popupItems_.empty() || popupStart_ != k || popupItems_[0] != oldFirst) popupSel_ = 0;
+      if (!was || popupItems_.empty() || popupStart_ != k || popupItems_[0] != oldFirst) {
+        popupSel_ = 0;
+        popupFirst_ = 0;
+      }
       popupSel_ = std::min<int>(popupSel_, (int)popupItems_.size() - 1);
       popupStart_ = k;
       return;
@@ -1420,7 +1437,8 @@ void EditorScreen::onTap(int x, int y) {
   const int prevLine = cursorLine_;
   if (popup_ && x >= popupX_ && x < popupX_ + popupW_ && cy + scroll_ >= popupY_ &&
       cy + scroll_ < popupY_ + popupH_) {
-    popupSel_ = std::max(0, std::min<int>((cy + scroll_ - popupY_ - 4) / 28, popupItems_.size() - 1));
+    popupSel_ = std::max(0, std::min<int>(popupFirst_ + (cy + scroll_ - popupY_ - 4) / 28,
+                                          popupItems_.size() - 1));
     acceptPopup();
     afterChange(prevLine, -1, true);
     return;

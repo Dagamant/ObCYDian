@@ -136,6 +136,7 @@ class EditorScreen : public Screen {
   std::vector<std::string> popupItems_;
   int popupSel_ = 0;
   int popupX_ = 0, popupY_ = 0, popupW_ = 0, popupH_ = 0;  // content coordinates
+  int popupRows_ = 0, popupFirst_ = 0;  // visible window into popupItems_
   void placePopup();
   bool titleDirty_ = false;
 

@@ -1,3 +1,4 @@
+#include "btkbd.h"
 #include "screens.h"
 #include "touch_calib.h"
 
@@ -46,6 +47,7 @@ std::string humanBytes(uint64_t b) {
 
 void ToolsScreen::draw() {
   ui::topBar("Settings", ui::Icon::Back, ui::Icon::None);
+  btnBluetooth_ = {gfx.width() - theme::MARGIN - 4 - 220, theme::BAR_H + 10, 220, 40};
   gfx.fillRect(0, theme::BAR_H, gfx.width(), gfx.height() - theme::BAR_H, theme::BG);
   drawInfo();
 
@@ -96,6 +98,7 @@ void ToolsScreen::drawInfo() {
     row("Free space", freeKnown_ ? humanBytes(free_) : "calculating...");
     row("Notes", std::to_string(storage::notes().size()));
   }
+  ui::button(btnBluetooth_, "Bluetooth keyboard", theme::ACCENT_BG);
 }
 
 void ToolsScreen::tick() {
@@ -145,6 +148,8 @@ void ToolsScreen::onTap(int x, int y) {
     freeKnown_ = false;
     draw();
     app::toast(storage::state() == storage::State::Mounted ? "Card mounted" : "Card not mounted");
+  } else if (btnBluetooth_.contains(x, y)) {
+    app::openBluetooth();
   } else if (btnCalibrate_.contains(x, y)) {
     touch_calib::run(gfx);
     draw();

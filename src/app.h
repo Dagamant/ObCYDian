@@ -35,6 +35,7 @@ void openNote(const std::string& path, int scroll = 0);  // reading view
 void editNote(const std::string& path);
 void viewNote(const std::string& path);
 void openTools();
+void openBluetooth();
 // Quick switcher / name prompt. `dir` is where new notes go; `path` is the note to rename.
 void openSwitcher(SwitcherMode mode, const std::string& dir, const std::string& path = "");
 // Closes the switcher and opens `path` (in the editor if `edit`).

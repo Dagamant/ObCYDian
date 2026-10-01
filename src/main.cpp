@@ -5,6 +5,7 @@
 #include <Arduino.h>
 
 #include "app.h"
+#include "btkbd.h"
 #include "debug_console.h"
 #include "display.h"
 #include "input.h"
@@ -39,6 +40,7 @@ void setup() {
   gfx.setTextDatum(textdatum_t::top_left);
   storage::begin();
 
+  btkbd::begin();
   app::begin();
   Serial.printf("[app] ready, heap free %u\n", ESP.getFreeHeap());
 }
@@ -47,6 +49,7 @@ void loop() {
   debug_console::poll();
   input::Event e;
   while (input::poll(e)) app::handle(e);
+  while (btkbd::poll(e)) app::handle(e);
   app::loop();
   delay(5);
 }

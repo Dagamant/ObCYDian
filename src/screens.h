@@ -39,7 +39,7 @@ class ToolsScreen : public Screen {
  private:
   void drawInfo();
   void format();
-  ui::Rect btnFormat_, btnSample_, btnRemount_, btnCalibrate_;
+  ui::Rect btnFormat_, btnSample_, btnRemount_, btnCalibrate_, btnBluetooth_;
   bool needFree_ = false;
   uint64_t free_ = 0;
   bool freeKnown_ = false;
@@ -65,4 +65,19 @@ class SwitcherScreen : public Screen {
   std::vector<std::string> results_;
   bool offerCreate_ = false;
   int sel_ = 0;
+};
+
+class BluetoothScreen : public Screen {
+ public:
+  void draw() override;
+  void onTap(int x, int y) override;
+  void onKey(const input::Event& e) override;
+  void tick() override;
+
+ private:
+  void drawBody();
+  int lastState_ = -1;
+  size_t lastFound_ = 0;
+  std::vector<ui::Rect> rows_;
+  ui::Rect btnScan_, btnForget_, btnPower_;
 };

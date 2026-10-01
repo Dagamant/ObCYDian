@@ -8,6 +8,7 @@
 //   ls [DIR]             list a directory
 //   cat PATH             print a file
 //   gen N PATH           write a large generated note (performance testing)
+//   bt [scan|pair N|forget|raw on|raw off|on|off]   Bluetooth keyboard control/status
 //   cal                  run touch calibration
 //   mem                  print free heap
 //   type TEXT            type text (\n = Enter, \t = Tab)

@@ -5,6 +5,7 @@
 #include <string>
 
 #include "app.h"
+#include "btkbd.h"
 #include "display.h"
 #include "input.h"
 #include "storage.h"
@@ -228,6 +229,20 @@ static void run(const std::string& line) {
     bool ok = storage::writeFile(arg, t);
     storage::rescan();
     Serial.printf("gen %s: %u bytes %s\n", arg, (unsigned)t.size(), ok ? "ok" : "FAILED");
+  } else if (s == "bt") {
+    if (rest == "scan") btkbd::startScan();
+    else if (rest.rfind("pair ", 0) == 0) {
+      auto found = btkbd::scanResults();
+      size_t i = atoi(rest.c_str() + 5);
+      if (i < found.size()) btkbd::pair(found[i]);
+    } else if (rest == "forget") btkbd::forget();
+    else if (rest == "raw on" || rest == "raw off") btkbd::setRawLogging(rest == "raw on");
+    else if (rest == "on" || rest == "off") btkbd::setEnabled(rest == "on");
+    Serial.printf("[bt] state: %s, keyboard '%s'\n", btkbd::stateText(), btkbd::keyboardName().c_str());
+    auto found = btkbd::scanResults();
+    for (size_t i = 0; i < found.size(); i++)
+      Serial.printf("  %u: %s %s (type %u) %d dBm\n", (unsigned)i, found[i].name.c_str(), found[i].addr.c_str(),
+                    found[i].addrType, found[i].rssi);
   } else if (s == "cal") {
     touch_calib::run(gfx);
     app::redraw();

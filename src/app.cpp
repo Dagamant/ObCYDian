@@ -9,7 +9,7 @@ namespace app {
 
 namespace {
 
-enum class Kind { Folder, Note, Edit, Tools, Switcher };
+enum class Kind { Folder, Note, Edit, Tools, Switcher, Bluetooth };
 
 struct Nav {
   Kind kind;
@@ -21,6 +21,7 @@ BrowserScreen browser;
 EditorScreen editor;
 ToolsScreen tools;
 SwitcherScreen switcher;
+BluetoothScreen bluetooth;
 
 std::vector<Nav> history;
 Screen* current = nullptr;
@@ -63,6 +64,9 @@ void show() {
       break;
     case Kind::Switcher:
       current = &switcher;
+      break;
+    case Kind::Bluetooth:
+      current = &bluetooth;
       break;
   }
   redraw();
@@ -208,6 +212,7 @@ void loop() {
 void openFolder(const std::string& dir, int scroll) { push(Kind::Folder, dir, scroll); }
 void openNote(const std::string& path, int scroll) { push(Kind::Note, path, scroll); }
 void openTools() { push(Kind::Tools, "", 0); }
+void openBluetooth() { push(Kind::Bluetooth, "", 0); }
 
 void editNote(const std::string& path) {
   if (!switchMode(Kind::Note, Kind::Edit, path)) push(Kind::Edit, path, 0);
