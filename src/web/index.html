@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CYD Notes</title>
+<title>ObCYDian</title>
+<link rel="icon" href="data:,">
 <style>
 :root{--bg:#1e1e1e;--side:#262626;--bar:#2b2b2b;--border:#3a3a3a;--text:#dadada;--bright:#f2f2f2;--muted:#999;--faint:#666;--accent:#a88bfa;--accent-dim:#6f5fa8;--accent-bg:#3b3159;--code-bg:#2d2d2d;--code:#e8a87c;--mark:#6b5a14;--danger:#c0392b}
 @media (prefers-color-scheme:light){:root{--bg:#fff;--side:#f6f6f6;--bar:#efefef;--border:#ddd;--text:#222;--bright:#000;--muted:#666;--faint:#999;--accent:#7c5cf0;--accent-dim:#a99be0;--accent-bg:#ebe5ff;--code-bg:#f2f2f2;--code:#b4541c;--mark:#fff3a3}}
@@ -100,7 +101,7 @@ textarea{width:100%;min-height:calc(100vh - 220px);background:var(--bg);color:va
 <body>
 <header>
   <button class="icon" id="menu" title="Files">&#9776;</button>
-  <span class="brand">CYD Notes</span>
+  <span class="brand">ObCYDian</span>
   <input id="search" type="search" placeholder="Search notes..." autocomplete="off">
   <span class="spacer"></span>
   <button class="primary" id="new" title="New note">+ New</button>
@@ -116,6 +117,7 @@ textarea{width:100%;min-height:calc(100vh - 220px);background:var(--bg);color:va
 "use strict";
 const $ = s => document.querySelector(s);
 let notes = [], folders = [], current = null, source = "", editing = false, dirty = false;
+let editOnOpen = null;  // path to open straight into the editor once loaded (new notes)
 const openFolders = new Set(JSON.parse(localStorage.getItem("openFolders") || "[]"));
 
 // ---------------------------------------------------------------- utilities
@@ -379,8 +381,12 @@ async function openNote(path, heading) {
   showNote();
   if (heading) { const el = document.getElementById(slug(heading)); if (el) el.scrollIntoView(); }
   else main.scrollTop = 0;
-  document.title = baseName(path) + " - CYD Notes";
+  document.title = baseName(path) + " - ObCYDian";
   document.body.classList.remove("side");
+  if (editOnOpen === path) {
+    editOnOpen = null;
+    return showEditor();
+  }
   loadBacklinks(path);
 }
 
@@ -450,8 +456,13 @@ async function finishEditing() {
 }
 
 function markDirty() { dirty = true; const st = $("#st"); if (st) st.textContent = "Unsaved changes"; }
-let previewTimer = 0;
-function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(updatePreview, 250); }
+// Throttled: refreshes at most every 300 ms while typing, and once more after the last key.
+let previewTimer = 0, lastPreview = 0;
+function schedulePreview() {
+  clearTimeout(previewTimer);
+  const wait = Math.max(0, 300 - (Date.now() - lastPreview));
+  previewTimer = setTimeout(() => { lastPreview = Date.now(); updatePreview(); }, wait);
+}
 function updatePreview() { const pv = $("#preview"); if (pv && pv.offsetParent !== null) pv.innerHTML = render($("#ta").value, current); }
 
 // Replace [a, b) with text through execCommand so the browser's undo history keeps working.
@@ -643,8 +654,8 @@ async function createNote(name, edit = true) {
     try { await api("PUT", notePath(path), ""); } catch (e) { return toast("Couldn't create: " + e.message); }
     await loadTree();
   }
+  if (!existing && edit) editOnOpen = path;
   location.hash = encodeURI(existing || path);
-  if (!existing && edit) setTimeout(() => { if (current === path) showEditor(); }, 400);
 }
 
 async function renameNote() {
@@ -687,8 +698,8 @@ async function showSettings() {
   try { s = await (await api("GET", "/api/status")).json(); } catch (e) {}
   main.innerHTML = '<div class="page"><div class="head"><h1>Device</h1></div><div class="card">' +
     "<div><b>Mode:</b> " + esc(s.mode || "?") + "</div><div><b>Network:</b> " + esc(s.ssid || "-") + (s.ap ? " (setup network)" : "") + "</div>" +
-    "<div><b>Address:</b> " + esc(s.ip || "-") + (s.ap ? "" : " &middot; http://cyd-notes.local") + "</div><div><b>Notes:</b> " + (s.notes ?? "?") + (s.card === false ? " (no SD card!)" : "") + '</div><div class="status">Free memory: ' + Math.round((s.heap || 0) / 1024) + " KB</div></div>" +
-    '<div class="card"><b>WiFi network</b><div class="status">The device joins this network at startup. ' + (s.ap ? "After saving, connect this phone/computer to the same network and open http://cyd-notes.local" : "") + "</div>" +
+    "<div><b>Address:</b> " + esc(s.ip || "-") + (s.ap ? "" : " &middot; http://obcydian.local") + "</div><div><b>Notes:</b> " + (s.notes ?? "?") + (s.card === false ? " (no SD card!)" : "") + '</div><div class="status">Free memory: ' + Math.round((s.heap || 0) / 1024) + " KB</div></div>" +
+    '<div class="card"><b>WiFi network</b><div class="status">The device joins this network at startup. ' + (s.ap ? "After saving, connect this phone/computer to the same network and open http://obcydian.local" : "") + "</div>" +
     '<label>Network name</label><input id="ssid" list="nets" value="' + esc(s.savedSsid || "") + '"><datalist id="nets"></datalist>' +
     '<label>Password</label><input id="pass" type="password" autocomplete="off">' +
     '<p><button id="scan">Scan</button> <button id="savewifi" class="primary">Save &amp; connect</button></p></div></div>';
@@ -712,6 +723,7 @@ async function showSettings() {
 
 // ---------------------------------------------------------------- routing & events
 async function route() {
+  document.body.classList.remove("side");
   const h = location.hash.slice(1);
   if (h === "settings") return showSettings();
   if (!h) return showHome();

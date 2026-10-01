@@ -17,7 +17,7 @@ namespace web {
 
 namespace {
 
-constexpr const char* kHostname = "cyd-notes";
+constexpr const char* kHostname = "obcydian";
 constexpr uint32_t kConnectTimeoutMs = 20000;
 
 WebServer server(80);
@@ -43,7 +43,7 @@ void loadSettings() {
   uint8_t mac[6];
   WiFi.macAddress(mac);
   char name[32];
-  snprintf(name, sizeof(name), "CYD-Notes-%02X%02X", mac[4], mac[5]);
+  snprintf(name, sizeof(name), "ObCYDian-%02X%02X", mac[4], mac[5]);
   apSsid_ = name;
 }
 
@@ -164,6 +164,12 @@ void handlePutNote() {
   if (!requireCard()) return;
   std::string path = arg("path");
   if (!isNotePath(path)) return sendError(400, "Bad path");
+  // The note must arrive as a raw text body. WebServer folds form-encoded bodies into its
+  // argument parsing (dropping most of the text), which would save a blank note, so refuse
+  // those rather than wipe the file.
+  String type = server.header("Content-Type");
+  if (type.startsWith("application/x-www-form-urlencoded") || type.startsWith("multipart/"))
+    return sendError(415, "Send the note as text/plain");
   bool existed = storage::exists(path);
   std::string body = server.arg("plain").c_str();
   if (!storage::writeFile(path, body)) return sendError(500, "Write failed");
@@ -266,6 +272,8 @@ void startServer() {
   server.on("/api/wifi/scan", HTTP_GET, handleScan);
   server.on("/api/wifi", HTTP_POST, handleSetWifi);
   server.onNotFound(handleNotFound);
+  static const char* headers[] = {"Content-Type"};
+  server.collectHeaders(headers, 1);
   server.begin();
   serverStarted_ = true;
 }

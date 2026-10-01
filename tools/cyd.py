@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drive the CYD Notes serial debug console.
+"""Drive the ObCYDian serial debug console.
 
 Examples:
   tools/cyd.py kbd              # type on the device from this terminal (Ctrl+] quits)

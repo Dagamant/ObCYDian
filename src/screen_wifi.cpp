@@ -19,10 +19,12 @@ void WifiScreen::drawBody() {
   gfx.fillRect(0, theme::BAR_H, W, gfx.height() - theme::BAR_H, theme::BG);
 
   int y = theme::BAR_H + 12;
+  // In WiFi mode a QR code fills the right side, so text must stop short of it
+  const int textW = (wifiMode ? W - 148 - 3 * M : W - 2 * M);
   auto line = [&](const std::string& s, uint16_t color = theme::TEXT, const lgfx::IFont* f = font::ui(), int dy = 24) {
     gfx.setFont(f);
     gfx.setTextColor(color);
-    gfx.drawString(tf::toAscii(s).c_str(), M, y);
+    gfx.drawString(ui::ellipsize(tf::toAscii(s), textW, f).c_str(), M, y);
     y += dy;
   };
   const std::string saved = web::savedSsid();
@@ -42,10 +44,11 @@ void WifiScreen::drawBody() {
         break;
       case web::State::Connected: {
         line("Web server running", theme::TEXT_BRIGHT, font::h2(), 34);
-        line("On a device on " + saved + ", open:", theme::MUTED, font::ui(), 28);
+        line("On the network " + saved, theme::MUTED);
+        line("open this in a browser:", theme::MUTED, font::ui(), 28);
         line(web::url(), theme::ACCENT, font::uiBold(), 26);
-        line("http://cyd-notes.local/", theme::ACCENT, font::uiBold(), 30);
-        line("Scan the code to open it.", theme::MUTED);
+        line("http://obcydian.local/", theme::ACCENT, font::uiBold(), 30);
+        line("or scan the code.", theme::MUTED);
         gfx.qrcode(web::url().c_str(), qx, qy, qr, 3);
         break;
       }
@@ -56,7 +59,7 @@ void WifiScreen::drawBody() {
         line("   Password  " + web::apPassword(), theme::TEXT);
         line("   (or scan the code)", theme::MUTED);
         line("2. Open http://192.168.4.1/", theme::TEXT);
-        line("   to browse notes or set your network", theme::MUTED);
+        line("   to set your network", theme::MUTED);
         std::string join = "WIFI:T:WPA;S:" + web::apSsid() + ";P:" + web::apPassword() + ";;";
         gfx.qrcode(join.c_str(), qx, qy, qr, 3);
         break;

@@ -1,4 +1,4 @@
-// CYD Notes: an Obsidian-style markdown vault on the 3.5" ESP32-32E Cheap Yellow Display.
+// ObCYDian: an Obsidian-style markdown vault on the 3.5" ESP32-32E Cheap Yellow Display.
 //
 // Touch calibration runs on first boot or when BOOT is held during reset.
 
@@ -34,10 +34,22 @@ void setup() {
   if (forceCal || !touch_calib::load(gfx)) touch_calib::run(gfx);
 
   gfx.fillScreen(theme::BG);
+  gfx.setTextDatum(textdatum_t::middle_center);
+  // "Ob" + "CYD" + "ian", with CYD in the accent colour
+  gfx.setFont(font::h1());
+  gfx.setTextDatum(textdatum_t::middle_left);
+  int x = (gfx.width() - gfx.textWidth("ObCYDian")) / 2;
+  const int y = gfx.height() / 2 - 20;
+  for (auto part : {std::make_pair("Ob", theme::TEXT_BRIGHT), std::make_pair("CYD", theme::ACCENT),
+                    std::make_pair("ian", theme::TEXT_BRIGHT)}) {
+    gfx.setTextColor(part.second);
+    gfx.drawString(part.first, x, y);
+    x += gfx.textWidth(part.first);
+  }
+  gfx.setTextDatum(textdatum_t::middle_center);
   gfx.setFont(font::ui());
   gfx.setTextColor(theme::MUTED);
-  gfx.setTextDatum(textdatum_t::middle_center);
-  gfx.drawString("Mounting SD card...", gfx.width() / 2, gfx.height() / 2);
+  gfx.drawString("Mounting SD card...", gfx.width() / 2, gfx.height() / 2 + 30);
   gfx.setTextDatum(textdatum_t::top_left);
   storage::begin();
 

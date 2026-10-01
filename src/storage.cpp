@@ -459,7 +459,7 @@ std::string joinPath(const std::string& dir, const std::string& name) {
 
 // ---------------------------------------------------------------------------
 
-static const char* kWelcome = R"MD(# Welcome to CYD Notes
+static const char* kWelcome = R"MD(# Welcome to ObCYDian
 
 This is your **vault**: a folder of plain *markdown* files on the SD card, just like Obsidian.
 

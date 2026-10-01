@@ -532,7 +532,7 @@ void begin() {
     return;
   }
   queue_ = xQueueCreate(32, sizeof(Report));
-  NimBLEDevice::init("CYD Notes");
+  NimBLEDevice::init("ObCYDian");
   NimBLEDevice::setPower(ESP_PWR_LVL_P6);
   NimBLEDevice::setSecurityAuth(true, true, true);
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);
