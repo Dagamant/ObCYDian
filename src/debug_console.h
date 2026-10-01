@@ -10,6 +10,8 @@
 //   gen N PATH           write a large generated note (performance testing)
 //   bt [scan|pair N|forget|raw on|raw off|on|off]   Bluetooth keyboard control/status
 //   cal                  run touch calibration
+//   screen on|off        screen standby
+//   sleep                deep sleep (wake by touch or BOOT)
 //   mem                  print free heap
 //   type TEXT            type text (\n = Enter, \t = Tab)
 //   key [MOD+]NAME       press a key, e.g. "key ctrl+s", "key shift+left", "key enter"

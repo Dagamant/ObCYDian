@@ -37,6 +37,7 @@ void viewNote(const std::string& path);
 void openTools();
 void openBluetooth();
 void openWifi();
+void openPower();
 // Text prompt screen; `done` runs after the prompt closes with the entered text.
 void prompt(const std::string& title, const std::string& hint, const std::string& initial, bool secret,
             std::function<void(const std::string&)> done);
@@ -56,6 +57,11 @@ void noteDeleted(const std::string& path);
 // A note was created or changed outside the device UI (e.g. from the web page): refresh
 // whatever is on screen if it shows that note or its folder.
 void externalChange(const std::string& path);
+
+// The note on screen ("" if none); *editing tells whether it's in edit mode.
+std::string currentNote(bool* editing);
+// Saves anything unsaved before power-down.
+void prepareSleep();
 
 void redraw();
 void toast(const std::string& msg, uint32_t ms = 2000);

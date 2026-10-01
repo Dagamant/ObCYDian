@@ -7,6 +7,7 @@
 #include <WiFi.h>
 
 #include "app.h"
+#include "power.h"
 #include "radio.h"
 #include "storage.h"
 
@@ -94,6 +95,7 @@ void sendJson(int code, const std::string& body) {
 void sendError(int code, const char* msg) { sendJson(code, "{\"error\":" + q(msg) + "}"); }
 
 bool requireCard() {
+  power::keepAwake();  // web use counts as activity for the sleep timer
   if (storage::state() == storage::State::Mounted) return true;
   sendError(503, "No SD card");
   return false;
@@ -116,11 +118,13 @@ const char* mimeFor(const std::string& p) {
 // --- Handlers ---------------------------------------------------------------
 
 void handleIndex() {
+  power::keepAwake();
   server.sendHeader("Cache-Control", "no-cache");
   server.send_P(200, "text/html; charset=utf-8", index_html_start, index_html_end - index_html_start - 1);
 }
 
 void handleStatus() {
+  power::keepAwake();
   std::string j = "{\"mode\":" + q(radio::name(radio::mode())) + ",\"state\":" + q(stateText()) +
                   ",\"ssid\":" + q(state_ == State::AccessPoint ? apSsid_ : ssid_) + ",\"savedSsid\":" + q(ssid_) +
                   ",\"ap\":" + (state_ == State::AccessPoint ? "true" : "false") + ",\"ip\":" + q(ip()) +

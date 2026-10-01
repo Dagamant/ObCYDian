@@ -40,7 +40,7 @@ class ToolsScreen : public Screen {
  private:
   void drawInfo();
   void format();
-  ui::Rect btnFormat_, btnSample_, btnRemount_, btnCalibrate_, btnBluetooth_, btnWifi_;
+  ui::Rect btnFormat_, btnSample_, btnRemount_, btnPower_, btnBluetooth_, btnWifi_;
   bool needFree_ = false;
   uint64_t free_ = 0;
   bool freeKnown_ = false;
@@ -112,4 +112,15 @@ class PromptScreen : public Screen {
   size_t cursor_ = 0;
   bool secret_ = false, reveal_ = false;
   std::function<void(const std::string&)> done_;
+};
+
+class PowerScreen : public Screen {
+ public:
+  void draw() override;
+  void onTap(int x, int y) override;
+  void onKey(const input::Event& e) override;
+
+ private:
+  void drawRows();
+  ui::Rect btnDim_, btnBright_, btnScreen_, btnSleep_, btnOffNow_, btnSleepNow_, btnCalibrate_;
 };

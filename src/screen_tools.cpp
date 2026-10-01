@@ -56,17 +56,17 @@ void ToolsScreen::draw() {
   const int rx = 248, rw = W - M - rx;
   gfx.setFont(font::h2());
   gfx.setTextColor(theme::TEXT_BRIGHT);
-  gfx.drawString("Connections", rx, theme::BAR_H + 10);
+  gfx.drawString("Device", rx, theme::BAR_H + 10);
   gfx.setFont(font::small());
   gfx.setTextColor(theme::MUTED);
   gfx.drawString((std::string("Radio: ") + radio::name(radio::mode())).c_str(), rx, theme::BAR_H + 40);
   btnBluetooth_ = {rx, theme::BAR_H + 62, rw, 40};
   btnWifi_ = {rx, theme::BAR_H + 108, rw, 40};
-  btnCalibrate_ = {rx, theme::BAR_H + 154, rw, 40};
+  btnPower_ = {rx, theme::BAR_H + 154, rw, 40};
   ui::button(btnBluetooth_, "Bluetooth keyboard",
              radio::mode() == radio::Mode::Bluetooth ? theme::ACCENT_BG : theme::BORDER);
   ui::button(btnWifi_, "WiFi & web server", radio::mode() == radio::Mode::Wifi ? theme::ACCENT_BG : theme::BORDER);
-  ui::button(btnCalibrate_, "Calibrate touch", theme::BORDER);
+  ui::button(btnPower_, "Display & power", theme::BORDER);
 
   // Bottom row: SD card actions
   const int bw = (W - 2 * M - 16) / 3, by = gfx.height() - 54;
@@ -165,8 +165,7 @@ void ToolsScreen::onTap(int x, int y) {
     app::openBluetooth();
   } else if (btnWifi_.contains(x, y)) {
     app::openWifi();
-  } else if (btnCalibrate_.contains(x, y)) {
-    touch_calib::run(gfx);
-    draw();
+  } else if (btnPower_.contains(x, y)) {
+    app::openPower();
   }
 }

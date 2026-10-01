@@ -9,6 +9,7 @@
 #include "debug_console.h"
 #include "display.h"
 #include "input.h"
+#include "power.h"
 #include "storage.h"
 #include "theme.h"
 #include "touch_calib.h"
@@ -19,6 +20,7 @@ static constexpr uint8_t kRotation = 1;  // landscape 480x320, USB-C on the left
 void setup() {
   Serial.begin(921600);
   pinMode(pins::BOOT_BTN, INPUT_PULLUP);
+  power::begin();  // releases pins parked during deep sleep
   for (int p : {pins::LED_R, pins::LED_G, pins::LED_B}) {
     pinMode(p, OUTPUT);
     digitalWrite(p, HIGH);  // off (active low)
@@ -26,11 +28,12 @@ void setup() {
 
   gfx.init();
   gfx.setRotation(kRotation);
-  gfx.setBrightness(200);
+  gfx.setBrightness(power::brightness());
   gfx.fillScreen(theme::BG);
   Serial.printf("\n[display] %dx%d\n", gfx.width(), gfx.height());
 
-  bool forceCal = digitalRead(pins::BOOT_BTN) == LOW;
+  // BOOT held at power-on forces calibration (but not when BOOT was used to wake from sleep)
+  bool forceCal = digitalRead(pins::BOOT_BTN) == LOW && !power::wokeFromSleep();
   if (forceCal || !touch_calib::load(gfx)) touch_calib::run(gfx);
 
   gfx.fillScreen(theme::BG);
@@ -56,15 +59,27 @@ void setup() {
   btkbd::begin();
   web::begin();
   app::begin();
+  if (power::wokeFromSleep()) {
+    // Don't let the touch that woke us register as a tap
+    lgfx::touch_point_t tp;
+    uint32_t t = millis();
+    while (gfx.getTouchRaw(&tp, 1) && millis() - t < 3000) delay(20);
+    bool editing = false;
+    std::string path = power::resumePath(&editing);
+    if (!path.empty() && storage::exists(path)) editing ? app::editNote(path) : app::openNote(path);
+  }
   Serial.printf("[app] ready, heap free %u\n", ESP.getFreeHeap());
 }
 
 void loop() {
   debug_console::poll();
   input::Event e;
-  while (input::poll(e)) app::handle(e);
-  while (btkbd::poll(e)) app::handle(e);
+  while (input::poll(e))
+    if (!power::activity()) app::handle(e);  // the first touch/key with the screen off just wakes it
+  while (btkbd::poll(e))
+    if (!power::activity()) app::handle(e);
   app::loop();
   web::loop();
+  power::loop();
   delay(5);
 }

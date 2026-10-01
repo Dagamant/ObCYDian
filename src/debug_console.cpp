@@ -6,6 +6,7 @@
 
 #include "app.h"
 #include "btkbd.h"
+#include "power.h"
 #include "display.h"
 #include "input.h"
 #include "storage.h"
@@ -243,6 +244,11 @@ static void run(const std::string& line) {
     for (size_t i = 0; i < found.size(); i++)
       Serial.printf("  %u: %s %s (type %u) %d dBm\n", (unsigned)i, found[i].name.c_str(), found[i].addr.c_str(),
                     found[i].addrType, found[i].rssi);
+  } else if (s == "sleep") {
+    power::deepSleep();
+  } else if (s == "screen") {
+    if (rest == "off") power::screenOff();
+    else power::screenWake();
   } else if (s == "cal") {
     touch_calib::run(gfx);
     app::redraw();

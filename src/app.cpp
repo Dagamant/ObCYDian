@@ -10,7 +10,7 @@ namespace app {
 
 namespace {
 
-enum class Kind { Folder, Note, Edit, Tools, Switcher, Bluetooth, Wifi, Prompt };
+enum class Kind { Folder, Note, Edit, Tools, Switcher, Bluetooth, Wifi, Prompt, Power };
 
 struct Nav {
   Kind kind;
@@ -25,6 +25,7 @@ SwitcherScreen switcher;
 BluetoothScreen bluetooth;
 WifiScreen wifi;
 PromptScreen promptScreen;
+PowerScreen powerScreen;
 
 std::vector<Nav> history;
 Screen* current = nullptr;
@@ -76,6 +77,9 @@ void show() {
       break;
     case Kind::Prompt:
       current = &promptScreen;
+      break;
+    case Kind::Power:
+      current = &powerScreen;
       break;
   }
   redraw();
@@ -221,6 +225,7 @@ void loop() {
 void openFolder(const std::string& dir, int scroll) { push(Kind::Folder, dir, scroll); }
 void openNote(const std::string& path, int scroll) { push(Kind::Note, path, scroll); }
 void openTools() { push(Kind::Tools, "", 0); }
+void openPower() { push(Kind::Power, "", 0); }
 void openBluetooth() { push(Kind::Bluetooth, "", 0); }
 void openWifi() { push(Kind::Wifi, "", 0); }
 
@@ -302,6 +307,19 @@ void home() {
 void notePathChanged(const std::string& from, const std::string& to) {
   for (auto& n : history)
     if (n.path == from) n.path = to;
+}
+
+std::string currentNote(bool* editing) {
+  *editing = false;
+  if (history.empty()) return "";
+  const Nav& n = history.back();
+  if (n.kind != Kind::Note && n.kind != Kind::Edit) return "";
+  *editing = n.kind == Kind::Edit;
+  return n.path;
+}
+
+void prepareSleep() {
+  if (current) current->onLeave();
 }
 
 void externalChange(const std::string& path) {
