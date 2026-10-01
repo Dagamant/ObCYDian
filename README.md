@@ -4,6 +4,34 @@ An [Obsidian](https://obsidian.md)-style markdown notes app for the 3.5" ESP32 "
 
 <img src="docs/board-back.jpg" width="320" alt="The back of the 3.5 inch ESP32-32E display board">
 
+## Screenshots
+
+**On the device** (480×320, shown at 2×)
+
+| | |
+|---|---|
+| ![Reading view of a note](docs/screenshots/device-reading.png) | ![Callout and tasks](docs/screenshots/device-callout-tasks.png) |
+| Reading view with frontmatter, links and formatting | Callouts and tap-to-tick tasks |
+| ![Live preview editing](docs/screenshots/device-live-preview.png) | ![Link suggestions with the on-screen keyboard](docs/screenshots/device-link-suggest.png) |
+| Live preview: markdown is revealed on the cursor line | `[[` link suggestions and the on-screen keyboard |
+| ![File browser](docs/screenshots/device-browser.png) | ![Full-text search](docs/screenshots/device-search.png) |
+| File browser | Full-text search |
+| ![Quick switcher](docs/screenshots/device-switcher.png) | ![Display and power settings](docs/screenshots/device-power.png) |
+| Quick switcher (Ctrl+O) | Display & power settings |
+
+**In the browser** (WiFi mode)
+
+![Web app: reading a note](docs/screenshots/web-note.png)
+
+![Web app: markdown editor with live preview](docs/screenshots/web-editor.png)
+
+| | |
+|---|---|
+| ![Folder page](docs/screenshots/web-folder.png) | ![Search inside notes](docs/screenshots/web-search.png) |
+| Folder page | Search inside notes, with backlinks below the note |
+
+<img src="docs/screenshots/web-phone.png" width="260" alt="Web app on a phone">
+
 ## Features
 
 **Notes**

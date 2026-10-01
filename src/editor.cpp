@@ -33,6 +33,7 @@ enum : uint16_t {
   ST_MUTED = 256,
   ST_MONO = 512,
   ST_FAINT = 1024,
+  ST_CALLOUT = 2048,  // coloured with the line's callout colour
 };
 
 // Segment kinds
@@ -43,6 +44,56 @@ enum : uint8_t { BL_TEXT, BL_CODE, BL_FENCE, BL_FRONT };
 
 // Block state carried from line to line
 enum : uint8_t { SS_CODE = 1, SS_FRONT = 2, SS_TILDE = 4 };
+// Bits 3-5 of the line state carry the callout type through the lines of a callout
+constexpr int kCalloutShift = 3;
+
+// Obsidian callout types grouped by colour: 1 note, 2 tip, 3 warning, 4 danger,
+// 5 question, 6 example, 7 quote
+int calloutIndex(const char* t, size_t n) {
+  std::string s(t, n);
+  for (auto& c : s) c = tolower((unsigned char)c);
+  static const struct { const char* name; int idx; } kTypes[] = {
+      {"note", 1},     {"info", 1},      {"todo", 1},     {"abstract", 1}, {"summary", 1}, {"tldr", 1},
+      {"tip", 2},      {"hint", 2},      {"important", 2}, {"success", 2}, {"check", 2},   {"done", 2},
+      {"warning", 3},  {"caution", 3},   {"attention", 3}, {"danger", 4},  {"error", 4},   {"bug", 4},
+      {"failure", 4},  {"fail", 4},      {"missing", 4},  {"question", 5}, {"help", 5},    {"faq", 5},
+      {"example", 6},  {"quote", 7},     {"cite", 7}};
+  for (auto& k : kTypes)
+    if (s == k.name) return k.idx;
+  return 1;
+}
+
+uint16_t calloutColor(int idx) {
+  static const uint16_t kColors[] = {0,           rgb(0x027aff), rgb(0x08b94e), rgb(0xe9973f),
+                                     rgb(0xe93147), rgb(0xec7500), rgb(0x7852ee), rgb(0x9e9e9e)};
+  return idx > 0 && idx < 8 ? kColors[idx] : theme::QUOTE_BAR;
+}
+
+// Mixes `alpha`/256 of colour c over the background (for callout tints)
+uint16_t tint(uint16_t c, int alpha) {
+  auto mix = [&](int a, int b) { return (a * alpha + b * (256 - alpha)) >> 8; };
+  const uint16_t bg = theme::BG;
+  int r = mix(c >> 11, bg >> 11), g = mix((c >> 5) & 63, (bg >> 5) & 63), b = mix(c & 31, bg & 31);
+  return (r << 11) | (g << 5) | b;
+}
+
+// Finds "[!type]" (with an optional +/- fold marker) at p[pos]. Sets the type range and
+// where the header ends (just past the marker and following spaces).
+bool parseCallout(const char* p, uint32_t n, uint32_t pos, int* idx, uint32_t* typeA, uint32_t* typeB,
+                  uint32_t* headerEnd) {
+  if (pos + 3 >= n || p[pos] != '[' || p[pos + 1] != '!') return false;
+  uint32_t e = pos + 2;
+  while (e < n && p[e] != ']' && p[e] != ' ') e++;
+  if (e >= n || p[e] != ']' || e == pos + 2) return false;
+  *typeA = pos + 2;
+  *typeB = e;
+  *idx = calloutIndex(p + pos + 2, e - pos - 2);
+  e++;
+  if (e < n && (p[e] == '+' || p[e] == '-')) e++;
+  while (e < n && p[e] == ' ') e++;
+  *headerEnd = e;
+  return true;
+}
 
 uint8_t fontFor(uint16_t style, int heading) {
   if (style & (ST_CODE | ST_MONO)) return tf::MONO;
@@ -58,8 +109,9 @@ struct Colors {
   bool hasBg;
 };
 
-Colors colorsFor(const EditorScreen::Seg& s, int heading) {
+Colors colorsFor(const EditorScreen::Seg& s, int heading, uint16_t callout) {
   Colors c{theme::TEXT, 0, false};
+  if (s.style & ST_CALLOUT) c.fg = callout;
   if (heading == 1) c.fg = theme::TEXT_BRIGHT;
   else if (heading >= 4) c.fg = theme::MUTED;
   if (s.style & ST_MUTED) c.fg = theme::MUTED;
@@ -260,6 +312,15 @@ uint8_t EditorScreen::stateOut(uint8_t st, int i) const {
   if (i == 0 && n == 3 && memcmp(p, "---", 3) == 0) return SS_FRONT;
   if (startsWith(p, n, fw, "```")) return SS_CODE;
   if (startsWith(p, n, fw, "~~~")) return SS_CODE | SS_TILDE;
+  // Callouts: a quote starting "[!type]" opens one; following quote lines continue it
+  if (fw < n && p[fw] == '>') {
+    uint32_t pos = fw;
+    while (pos < n && (p[pos] == '>' || p[pos] == ' ')) pos++;
+    int idx;
+    uint32_t a, b, e;
+    if (parseCallout(p, n, pos, &idx, &a, &b, &e)) return idx << kCalloutShift;
+    return st & (7 << kCalloutShift);
+  }
   return 0;
 }
 
@@ -372,7 +433,7 @@ void EditorScreen::layoutLine(int i, bool revealed, Layout& L) {
   L.line = i;
   L.revealed = revealed;
   L.block = BL_TEXT;
-  L.heading = L.quote = 0;
+  L.heading = L.quote = L.callout = 0;
   L.segs.clear();
   L.rows.clear();
   L.rowEnd.clear();
@@ -408,9 +469,29 @@ void EditorScreen::layoutLine(int i, bool revealed, Layout& L) {
       if (pos < n && p[pos] == ' ') pos++;
     }
     if (L.quote) L.segs.push_back({qs, pos, 0, KD_MARK});
+    uint16_t base = 0;
+    if (L.quote) {
+      int idx;
+      uint32_t ta, tb, he;
+      if (parseCallout(p, n, pos, &idx, &ta, &tb, &he)) {
+        // Title line: the [!type] marker is syntax; the title (or, without one, the type
+        // name) shows bold in the callout colour
+        L.callout = idx;
+        base = ST_CALLOUT | ST_BOLD;
+        if (he < n) {
+          L.segs.push_back({pos, he, ST_CALLOUT, KD_MARK});
+        } else {
+          L.segs.push_back({pos, ta, ST_CALLOUT, KD_MARK});
+          L.segs.push_back({ta, tb, (uint16_t)(ST_CALLOUT | ST_BOLD), KD_TEXT});
+          L.segs.push_back({tb, n, ST_CALLOUT, KD_MARK});
+        }
+        pos = he;
+      } else {
+        L.callout = (st >> kCalloutShift) & 7;
+      }
+    }
     uint32_t h = 0;
     while (pos + h < n && p[pos + h] == '#') h++;
-    uint16_t base = 0;
     if (h >= 1 && h <= 6 && pos + h < n && p[pos + h] == ' ') {
       L.heading = h;
       L.segs.push_back({pos, pos + h + 1, 0, KD_MARK});
@@ -568,8 +649,10 @@ void EditorScreen::drawLine(LGFX_Sprite& s, const Layout& L, int y0) {
   const int M = theme::MARGIN, W = gfx.width();
 
   if (L.block != BL_TEXT) s.fillRect(M, y0, W - 2 * M, L.height, theme::CODE_BG);
+  if (L.callout) s.fillRect(M, y0, W - 2 * M, L.height, tint(calloutColor(L.callout), 36));
   if (!L.revealed)
-    for (int q = 0; q < L.quote; q++) s.fillRect(M + q * kQuoteW, y0, 3, L.height, theme::QUOTE_BAR);
+    for (int q = 0; q < L.quote; q++)
+      s.fillRect(M + q * kQuoteW, y0, 3, L.height, L.callout ? calloutColor(L.callout) : theme::QUOTE_BAR);
 
   // Selection
   if (hasSelection()) {
@@ -618,7 +701,7 @@ void EditorScreen::drawLine(LGFX_Sprite& s, const Layout& L, int y0) {
     }
 
     const uint8_t f = fontFor(sg.style, L.heading);
-    const Colors col = colorsFor(sg, L.heading);
+    const Colors col = colorsFor(sg, L.heading, calloutColor(L.callout));
     s.setFont(tf::get(f).font);
     s.setTextColor(col.fg);
     s.setTextDatum(textdatum_t::baseline_left);

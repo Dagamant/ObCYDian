@@ -45,6 +45,7 @@ class EditorScreen : public Screen {
     int line = -1;
     bool revealed = false;
     uint8_t block = 0, heading = 0, quote = 0;
+    uint8_t callout = 0;  // callout type (0 = plain quote / none)
     int16_t height = 0;
     std::vector<Seg> segs;
     std::vector<int16_t> x;   // per byte (and one past the end): glyph x position
