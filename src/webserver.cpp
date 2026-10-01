@@ -12,6 +12,7 @@
 #include "battery.h"
 #include "clock.h"
 #include "dav.h"
+#include "noteindex.h"
 #include "power.h"
 #include "radio.h"
 #include "storage.h"
@@ -162,7 +163,7 @@ void handleStatus() {
                   ",\"ssid\":" + q(state_ == State::AccessPoint ? apSsid_ : ssid_) + ",\"savedSsid\":" + q(ssid_) +
                   ",\"ap\":" + (state_ == State::AccessPoint ? "true" : "false") + ",\"ip\":" + q(ip()) +
                   ",\"card\":" + (storage::state() == storage::State::Mounted ? "true" : "false") +
-                  ",\"notes\":" + std::to_string(storage::notes().size()) +
+                  ",\"notes\":" + std::to_string(storage::noteCount()) +
                   ",\"heap\":" + std::to_string(ESP.getFreeHeap()) +
                   ",\"battery\":" + (battery::present() ? std::to_string(battery::percent()) : "null") +
                   ",\"volts\":" + std::to_string(battery::voltage()) +
@@ -182,24 +183,21 @@ void handleTree() {
     out << (first ? "" : ",") << q(f);
     first = false;
   }
+  // Notes and their aliases stream straight from the card index
+  std::string aliases;
   out << "],\"notes\":[";
   first = true;
-  for (auto& n : storage::notes()) {
-    out << (first ? "" : ",") << q(n);
+  nidx::forEach([&](const nidx::Note& n) {
+    out << (first ? "" : ",") << q(n.path);
     first = false;
-  }
-  out << "],\"aliases\":{";
-  std::string lastPath;
-  for (auto& a : storage::aliases()) {  // grouped by note: {"/path.md": ["alias", ...]}
-    if (a.second != lastPath) {
-      out << (lastPath.empty() ? "" : "],") << q(a.second) << ":[";
-      lastPath = a.second;
-      first = true;
+    if (!n.aliases.empty() && aliases.size() < 16 * 1024) {
+      aliases += (aliases.empty() ? "" : ",") + q(n.path) + ":[";
+      for (size_t i = 0; i < n.aliases.size(); i++) aliases += (i ? "," : "") + q(n.aliases[i]);
+      aliases += "]";
     }
-    out << (first ? "" : ",") << q(a.first);
-    first = false;
-  }
-  out << (lastPath.empty() ? "}}" : "]}}");
+    return true;
+  }, false);
+  out << "],\"aliases\":{" << aliases << "}}";
 }
 
 // Browsers send their clock (UTC seconds + offset) so the device knows the date
@@ -357,53 +355,54 @@ void handleRadio() {
 // --- Graph: notes, links between them and links to notes that don't exist yet
 void handleGraph() {
   if (!requireCard()) return;
-  const auto& notes = storage::notes();
-  std::vector<std::string> ghosts;
-  std::vector<std::pair<int, int>> links;
-  for (int i = 0; i < (int)notes.size(); i++) {
-    std::string text;
-    if (!storage::readFile(notes[i], text)) continue;
-    for (size_t a = text.find("[["); a != std::string::npos; a = text.find("[[", a + 2)) {
-      size_t b = text.find("]]", a + 2);
-      if (b == std::string::npos) break;
-      size_t end = std::min(text.find_first_of("|#", a + 2), b);
-      std::string target = text.substr(a + 2, end - a - 2);
-      if (target.empty() || target.find('\n') != std::string::npos) continue;
-      std::string path = storage::resolveLink(target, notes[i]);
-      int j = -1;
-      if (!path.empty()) {
-        // notes are sorted case-insensitively: binary search for the index
-        auto it = std::lower_bound(notes.begin(), notes.end(), path, [](const std::string& a, const std::string& b) {
-          return strcasecmp(a.c_str(), b.c_str()) < 0;
-        });
-        if (it != notes.end() && *it == path) j = it - notes.begin();
-      } else {
-        size_t dot = target.find_last_of('.');
-        if (dot != std::string::npos && target.size() - dot <= 5 && strcasecmp(target.c_str() + dot, ".md") != 0)
-          continue;  // an attachment (image etc.), not a missing note
-        for (int k = 0; k < (int)ghosts.size(); k++)
-          if (strcasecmp(ghosts[k].c_str(), target.c_str()) == 0) j = notes.size() + k;
-        if (j < 0) {
-          ghosts.push_back(target);
-          j = notes.size() + ghosts.size() - 1;
-        }
-      }
-      if (j >= 0 && j != i) {
-        bool dup = false;
-        for (auto& l : links)
-          if ((l.first == i && l.second == j) || (l.first == j && l.second == i)) dup = true;
-        if (!dup) links.push_back({i, j});
-      }
-    }
-  }
+  // One pass over the card index: list the notes, resolve links to note ids (by hash; no
+  // paths read for unique names), then map ids to positions in the list.
   JsonOut out;
   out << "{\"notes\":[";
-  for (size_t i = 0; i < notes.size(); i++) out << (i ? "," : "") << q(notes[i]);
+  std::vector<uint32_t> ids;  // ascending: records are in file order
+  std::vector<std::pair<uint32_t, uint32_t>> links;  // (source position, target id or ghost tag)
+  std::vector<std::string> ghosts;
+  constexpr uint32_t kGhost = 0x80000000;
+  nidx::forEach([&](const nidx::Note& n) {
+    const uint32_t pos = ids.size();
+    out << (pos ? "," : "") << q(n.path);
+    ids.push_back(n.id);
+    for (auto& l : n.links) {
+      uint32_t id = nidx::resolveId(l.target, n.path);
+      if (id == nidx::kNone) {
+        size_t g = 0;
+        while (g < ghosts.size() && strcasecmp(ghosts[g].c_str(), l.target.c_str()) != 0) g++;
+        if (g == ghosts.size()) {
+          if (ghosts.size() >= 300) continue;
+          ghosts.push_back(l.target);
+        }
+        id = kGhost | g;
+      }
+      if (links.size() < 4000) links.push_back({pos, id});
+    }
+    return true;
+  });
   out << "],\"ghosts\":[";
   for (size_t i = 0; i < ghosts.size(); i++) out << (i ? "," : "") << q(ghosts[i]);
   out << "],\"links\":[";
-  for (size_t i = 0; i < links.size(); i++)
-    out << (i ? "," : "") << "[" << std::to_string(links[i].first) << "," << std::to_string(links[i].second) << "]";
+  std::vector<std::pair<uint32_t, uint32_t>> seen;
+  bool first = true;
+  for (auto& l : links) {
+    uint32_t dst;
+    if (l.second & kGhost) {
+      dst = ids.size() + (l.second & ~kGhost);
+    } else {
+      auto it = std::lower_bound(ids.begin(), ids.end(), l.second);
+      if (it == ids.end() || *it != l.second) continue;
+      dst = it - ids.begin();
+    }
+    if (dst == l.first) continue;
+    auto key = std::make_pair(std::min(l.first, dst), std::max(l.first, dst));
+    if (std::find(seen.begin(), seen.end(), key) != seen.end()) continue;
+    seen.push_back(key);
+    out << (first ? "" : ",") << "[" << std::to_string(l.first) << "," << std::to_string(dst) << "]";
+    first = false;
+  }
   out << "]}";
 }
 

@@ -56,6 +56,8 @@ std::vector<FileInfo> listAll(const std::string& dir = "/");
 std::vector<FileInfo> listRaw(const std::string& dir, std::vector<std::string>* subdirs);
 bool isDir(const std::string& path);
 uint32_t modifiedTime(const std::string& path);  // UTC seconds, 0 if unknown
+// Raw FAT date/time stamp: independent of the timezone, for spotting changed files.
+uint32_t modifiedStamp(const std::string& path);
 
 // Streaming writes for uploads (one at a time). Data goes to a .tmp file that replaces the
 // target on finish(), so an interrupted upload never leaves a partial file.
@@ -68,6 +70,9 @@ void writeAbort();
 bool streamFile(const std::string& path, const std::function<bool(const uint8_t*, size_t)>& sink);
 bool remove(const std::string& path);
 bool rename(const std::string& from, const std::string& to);
+// File operations that bypass the note index (for the index's own files)
+bool rawRemove(const std::string& path);
+bool rawRename(const std::string& from, const std::string& to);
 // Renames/moves a note and rewrites [[links]] to it in every other note, like Obsidian.
 // Returns false if the rename failed; *linksUpdated gets the number of links rewritten.
 bool renameNote(const std::string& from, const std::string& to, int* linksUpdated);
@@ -103,7 +108,7 @@ void rescan();
 // Cheap index updates for a single file (note or image) instead of a full rescan.
 void indexAdd(const std::string& path);
 void indexUpdate(const std::string& path);  // re-read a note's aliases
-const std::vector<std::string>& notes();
+size_t noteCount();  // the notes themselves are in the card index (noteindex.h)
 const std::vector<std::string>& folders();  // every folder path except "/"
 // Increments whenever the index changes; lets caches of resolved links invalidate.
 uint32_t generation();
@@ -114,8 +119,7 @@ std::string linkText(const std::string& path);
 
 // Values of a frontmatter list property ("key: [a, b]", "key: a" or a "- a" list).
 std::vector<std::string> frontmatterList(const std::string& text, const char* key);
-// Aliases from each note's frontmatter (rebuilt by rescan()).
-const std::vector<std::pair<std::string, std::string>>& aliases();  // (alias, path)
+
 // Obsidian-style link resolution. `target` is the [[link]] text without alias/heading.
 // Returns "" if no note matches.
 std::string resolveLink(const std::string& target, const std::string& fromPath);

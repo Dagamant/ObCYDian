@@ -110,7 +110,7 @@ void ToolsScreen::drawInfo() {
   }
   if (storage::state() == storage::State::Mounted) {
     row("Free", freeKnown_ ? humanBytes(free_) : "...");
-    row("Notes", std::to_string(storage::notes().size()));
+    row("Notes", std::to_string(storage::noteCount()));
   }
 }
 

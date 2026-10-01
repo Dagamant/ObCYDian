@@ -10,6 +10,7 @@
 #include "display.h"
 #include "input.h"
 #include "storage.h"
+#include "noteindex.h"
 #include "vault.h"
 #include "touch_calib.h"
 
@@ -255,7 +256,7 @@ static void run(const std::string& line) {
     // Times the whole-vault operations
     uint32_t t = millis();
     storage::rescan();
-    Serial.printf("rescan: %u ms (%u notes)\n", (unsigned)(millis() - t), (unsigned)storage::notes().size());
+    Serial.printf("rescan: %u ms (%u notes)\n", (unsigned)(millis() - t), (unsigned)storage::noteCount());
     t = millis();
     size_t n = vault::tags().size();
     Serial.printf("tags: %u ms (%u tags)\n", (unsigned)(millis() - t), (unsigned)n);
@@ -266,7 +267,9 @@ static void run(const std::string& line) {
     n = storage::searchText("garden", 50).size();
     Serial.printf("search: %u ms (%u hits)\n", (unsigned)(millis() - t), (unsigned)n);
     t = millis();
-    n = storage::backlinks(storage::notes().empty() ? "/" : storage::notes()[storage::notes().size() / 2]).size();
+    std::string some;
+    nidx::forEach([&](const nidx::Note& note) { some = note.path; return storage::noteCount() > 1 && some.find("10") == std::string::npos; }, false);
+    n = storage::backlinks(some).size();
     Serial.printf("backlinks: %u ms (%u)\n", (unsigned)(millis() - t), (unsigned)n);
     Serial.printf("heap free %u, largest %u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
   } else if (s == "sleep") {

@@ -58,9 +58,9 @@ void setup() {
   gfx.setTextColor(theme::MUTED);
   gfx.drawString("Mounting SD card...", gfx.width() / 2, gfx.height() / 2 + 30);
   gfx.setTextDatum(textdatum_t::top_left);
+  wallclock::begin();  // before storage: file times are converted with its timezone
   storage::begin();
   vault::load();
-  wallclock::begin();
   battery::begin();
 
   btkbd::begin();

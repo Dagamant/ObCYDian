@@ -7,21 +7,24 @@
 
 #include "board.h"
 #include "clock.h"
+#include "noteindex.h"
 
 namespace storage {
 
 static SPIClass sdSpi(VSPI);
 static SdFs sd;
 static State st = State::NoCard;
-static std::vector<std::string> index_;
 static std::vector<std::string> folders_;
-static std::vector<std::pair<std::string, std::string>> aliases_;  // (alias, note path)
 static std::vector<std::string> attachments_;                       // image files
-static uint32_t generation_ = 0;
+static uint32_t generation_ = 0;  // bumped with the note index's own generation (see generation())
 
 static bool endsWithCI(const std::string& s, const std::string& suffix) {
   return s.size() >= suffix.size() &&
          strcasecmp(s.c_str() + s.size() - suffix.size(), suffix.c_str()) == 0;
+}
+
+static bool startsWithCI(const std::string& s, const std::string& prefix) {
+  return s.size() >= prefix.size() && strncasecmp(s.c_str(), prefix.c_str(), prefix.size()) == 0;
 }
 
 static SdSpiConfig spiConfig() {
@@ -59,7 +62,7 @@ State begin() {
     spiStarted = true;
   }
   sd.end();
-  index_.clear();
+  nidx::clear();
   if (!sd.cardBegin(spiConfig())) {
     Serial.printf("[sd] no card (error 0x%02x)\n", sd.card() ? sd.card()->errorCode() : 0);
     return st = State::NoCard;
@@ -107,7 +110,7 @@ uint64_t freeBytes() {
 
 bool format(Print* progress) {
   sd.end();
-  index_.clear();
+  nidx::clear();
   st = State::NoCard;
   if (!sd.cardBegin(spiConfig())) return false;
   st = State::NoFilesystem;
@@ -181,7 +184,13 @@ bool writeFile(const std::string& path, const std::string& data) {
     return false;
   }
   if (sd.exists(path.c_str()) && !sd.remove(path.c_str())) return false;
-  return sd.rename(tmp.c_str(), path.c_str());
+  if (!sd.rename(tmp.c_str(), path.c_str())) return false;
+  // Every note write updates the note index, so nothing can leave it stale
+  if (isMarkdown(path.c_str()) && path.compare(0, 10, "/.obcydian") != 0) {
+    nidx::update(path, data);
+    generation_++;
+  }
+  return true;
 }
 
 int64_t fileSize(const std::string& path) {
@@ -243,6 +252,16 @@ bool isDir(const std::string& path) {
   return d;
 }
 
+uint32_t modifiedStamp(const std::string& path) {
+  if (st != State::Mounted) return 0;
+  FsFile f;
+  if (!f.open(path.c_str(), O_RDONLY)) return 0;
+  uint16_t d = 0, t = 0;
+  f.getModifyDateTime(&d, &t);
+  f.close();
+  return ((uint32_t)d << 16) | t;
+}
+
 uint32_t modifiedTime(const std::string& path) {
   if (st != State::Mounted) return 0;
   FsFile f;
@@ -265,6 +284,8 @@ bool writeBegin(const std::string& path) {
 
 bool writeChunk(const uint8_t* data, size_t n) { return writer_.isOpen() && writer_.write(data, n) == n; }
 
+static void afterWrite(const std::string& path);
+
 bool writeFinish() {
   if (!writer_.isOpen()) return false;
   bool ok = writer_.sync();
@@ -275,8 +296,13 @@ bool writeFinish() {
     return false;
   }
   if (sd.exists(writerPath_.c_str()) && !sd.remove(writerPath_.c_str())) return false;
-  return sd.rename(tmp.c_str(), writerPath_.c_str());
+  if (!sd.rename(tmp.c_str(), writerPath_.c_str())) return false;
+  afterWrite(writerPath_);
+  return true;
 }
+
+// A file arrived some other way than writeFile (uploads, sync): index it
+static void afterWrite(const std::string& path) { indexAdd(path); }
 
 void writeAbort() {
   if (!writer_.isOpen()) return;
@@ -302,27 +328,51 @@ bool streamFile(const std::string& path, const std::function<bool(const uint8_t*
 
 bool remove(const std::string& path) {
   if (st != State::Mounted || !sd.remove(path.c_str())) return false;
-  rescan();
+  if (isMarkdown(path.c_str())) nidx::remove(path);
+  attachments_.erase(std::remove(attachments_.begin(), attachments_.end(), path), attachments_.end());
+  generation_++;
   return true;
+}
+
+bool rawRemove(const std::string& path) { return st == State::Mounted && sd.remove(path.c_str()); }
+bool rawRename(const std::string& from, const std::string& to) {
+  return st == State::Mounted && sd.rename(from.c_str(), to.c_str());
 }
 
 bool rename(const std::string& from, const std::string& to) {
   if (st != State::Mounted || sd.exists(to.c_str())) return false;
+  const bool dir = isDir(from);
   mkdirs(parentDir(to));
   if (!sd.rename(from.c_str(), to.c_str())) return false;
-  rescan();
+  if (dir) {
+    rescan();  // a whole folder moved
+  } else {
+    if (isMarkdown(from.c_str())) nidx::remove(from);
+    attachments_.erase(std::remove(attachments_.begin(), attachments_.end(), from), attachments_.end());
+    indexAdd(to);
+  }
   return true;
 }
 
 bool renameNote(const std::string& from, const std::string& to, int* linksUpdated) {
   *linksUpdated = 0;
-  // 1. With the old index, find every [[target]] that points at `from`.
+  // 1. The index says which notes link to `from`; find the exact spans in those notes.
+  std::vector<std::string> linking;
+  const uint32_t fromId = nidx::idOf(from);
+  nidx::forEach([&](const nidx::Note& n) {
+    for (auto& l : n.links)
+      if (nidx::resolveId(l.target, n.path) == fromId) {
+        linking.push_back(n.path);
+        break;
+      }
+    return true;
+  });
   struct Fix {
     std::string note;
     std::vector<std::pair<size_t, size_t>> ranges;  // target text spans
   };
   std::vector<Fix> fixes;
-  for (const auto& note : index_) {
+  for (auto& note : linking) {
     std::string text;
     if (!readFile(note, text)) continue;
     Fix fix{note, {}};
@@ -352,14 +402,14 @@ bool renameNote(const std::string& from, const std::string& to, int* linksUpdate
   return true;
 }
 
-static bool startsWithCI(const std::string& s, const std::string& prefix) {
-  return s.size() >= prefix.size() && strncasecmp(s.c_str(), prefix.c_str(), prefix.size()) == 0;
-}
+
 
 int countNotesIn(const std::string& dir) {
   int n = 0;
-  for (auto& p : index_)
-    if (startsWithCI(p, dir + "/")) n++;
+  nidx::forEach([&](const nidx::Note& note) {
+    if (startsWithCI(note.path, dir + "/")) n++;
+    return true;
+  }, false);
   return n;
 }
 
@@ -372,7 +422,18 @@ bool renameFolder(const std::string& from, const std::string& to, int* linksUpda
   rescan();
   // Links written with the folder path ([[Old/Note]], [[/Old/Note]]) need the new path
   const std::string oldRel = from.substr(1), newRel = to.substr(1);
-  for (const auto& note : std::vector<std::string>(index_)) {
+  std::vector<std::string> affected;
+  nidx::forEach([&](const nidx::Note& n) {
+    for (auto& l : n.links) {
+      std::string t = l.target[0] == '/' ? l.target.substr(1) : l.target;
+      if (startsWithCI(t, oldRel + "/")) {
+        affected.push_back(n.path);
+        break;
+      }
+    }
+    return true;
+  });
+  for (auto& note : affected) {
     std::string text;
     if (!readFile(note, text)) continue;
     bool changed = false;
@@ -415,14 +476,45 @@ bool removeFolder(const std::string& dir) {
   return ok;
 }
 
+// Walks every non-hidden folder in directory order (no per-file path lookups, which are
+// slow on FAT), calling fn(path, size, mtime, file) for each file and dirFn for folders.
+static void walkTree(const std::string& dir, int depth,
+                     const std::function<bool(const std::string&, FsFile&)>& fileFn,
+                     const std::function<void(const std::string&)>& dirFn) {
+  if (depth > 10) return;
+  FsFile d, f;
+  if (!d.open(dir.c_str(), O_RDONLY)) return;
+  char name[256];
+  std::vector<std::string> subdirs;
+  while (f.openNext(&d, O_RDONLY)) {
+    f.getName(name, sizeof(name));
+    if (!isHiddenName(name)) {
+      if (f.isDir()) subdirs.push_back(joinPath(dir, name));
+      else if (!fileFn(joinPath(dir, name), f)) {
+        f.close();
+        return;
+      }
+    }
+    f.close();
+  }
+  d.close();
+  for (auto& sd_ : subdirs) {
+    if (dirFn) dirFn(sd_);
+    walkTree(sd_, depth + 1, fileFn, dirFn);
+  }
+}
+
 std::vector<Hit> searchText(const std::string& query, size_t maxResults) {
   std::vector<Hit> out;
-  if (query.empty()) return out;
+  if (query.empty() || st != State::Mounted) return out;
   std::string q;
   for (char c : query) q += tolower((unsigned char)c);
-  for (const auto& note : index_) {
+  walkTree("/", 0, [&](const std::string& note, FsFile& f) {
+    if (!isMarkdown(note.c_str())) return true;
     std::string text;
-    if (!readFile(note, text)) continue;
+    text.resize(std::min<uint64_t>(f.fileSize(), 96 * 1024));
+    int got = f.read(&text[0], text.size());
+    text.resize(got > 0 ? got : 0);
     std::string lower = text;
     for (auto& c : lower) c = tolower((unsigned char)c);
     int perNote = 0;
@@ -432,14 +524,15 @@ std::vector<Hit> searchText(const std::string& query, size_t maxResults) {
       size_t le = text.find('\n', at);
       if (le == std::string::npos) le = text.size();
       std::string line = text.substr(ls, le - ls);
-      size_t s = line.find_first_not_of(" \t");
-      line = s == std::string::npos ? "" : line.substr(s);
+      size_t s0 = line.find_first_not_of(" \t");
+      line = s0 == std::string::npos ? "" : line.substr(s0);
       out.push_back({note, (int)std::count(text.begin(), text.begin() + ls, '\n'), line});
       perNote++;
       at = le;  // one hit per line
-      if (out.size() >= maxResults) return out;
+      if (out.size() >= maxResults) return false;
     }
-  }
+    return true;
+  }, nullptr);
   return out;
 }
 
@@ -485,45 +578,15 @@ bool mkdirs(const std::string& path) {
   return sd.exists(path.c_str()) || sd.mkdir(path.c_str(), true);
 }
 
-static void scanDir(const std::string& dir, int depth) {
-  if (depth > 8) return;
-  FsFile d, f;
-  if (!d.open(dir.c_str(), O_RDONLY)) return;
-  char name[256];
-  std::vector<std::string> subdirs;
-  while (f.openNext(&d, O_RDONLY)) {
-    f.getName(name, sizeof(name));
-    if (!isHiddenName(name)) {
-      if (f.isDir()) {
-        subdirs.push_back(joinPath(dir, name));
-      } else if (isMarkdown(name)) {
-        index_.push_back(joinPath(dir, name));
-      } else if (isImageName(name)) {
-        attachments_.push_back(joinPath(dir, name));
-      }
-    }
-    f.close();
-  }
-  d.close();
-  for (auto& s : subdirs) {
-    folders_.push_back(s);
-    scanDir(s, depth + 1);
-  }
-}
+
 
 // Adds `note`'s frontmatter aliases to the alias index (only notes starting with ---)
-static void readAliases(const std::string& note) {
-  std::string head;
-  if (!readFile(note, head, 2048) || head.compare(0, 3, "---") != 0) return;
-  for (auto& a : frontmatterList(head, "aliases")) aliases_.push_back({a, note});
-  for (auto& a : frontmatterList(head, "alias")) aliases_.push_back({a, note});
-}
+
 
 void indexAdd(const std::string& path) {
   if (isMarkdown(path.c_str())) {
-    if (std::find(index_.begin(), index_.end(), path) == index_.end())
-      index_.insert(std::upper_bound(index_.begin(), index_.end(), path, lessCaseInsensitive), path);
-    indexUpdate(path);
+    std::string text;
+    if (readFile(path, text)) nidx::update(path, text);
   } else if (isImageName(path) && std::find(attachments_.begin(), attachments_.end(), path) == attachments_.end()) {
     attachments_.push_back(path);
   }
@@ -534,38 +597,42 @@ void indexAdd(const std::string& path) {
   generation_++;
 }
 
-void indexUpdate(const std::string& path) {
-  aliases_.erase(std::remove_if(aliases_.begin(), aliases_.end(), [&](auto& a) { return a.second == path; }), aliases_.end());
-  readAliases(path);
-  generation_++;
-}
+void indexUpdate(const std::string& path) { indexAdd(path); }
 
 void rescan() {
-  index_.clear();
   folders_.clear();
-  aliases_.clear();
   attachments_.clear();
   generation_++;
-  if (st != State::Mounted) return;
+  if (st != State::Mounted) return nidx::clear();
   uint32_t t = millis();
-  scanDir("/", 0);
-  std::sort(index_.begin(), index_.end(), lessCaseInsensitive);
+  nidx::Builder builder;
+  walkTree("/", 0, [&](const std::string& path, FsFile& f) {
+    if (isMarkdown(path.c_str())) {
+      uint16_t d = 0, tm = 0;
+      f.getModifyDateTime(&d, &tm);
+      builder.add(path, f.fileSize(), ((uint32_t)d << 16) | tm, [&](std::string& out) {
+        out.resize(std::min<uint64_t>(f.fileSize(), 96 * 1024));
+        int got = f.read(&out[0], out.size());
+        out.resize(got > 0 ? got : 0);
+        return got >= 0;
+      });
+    } else if (isImageName(path)) {
+      attachments_.push_back(path);
+    }
+    return true;
+  }, [&](const std::string& dir) { folders_.push_back(dir); });
+  builder.finish();
   std::sort(folders_.begin(), folders_.end(), lessCaseInsensitive);
-  // Aliases live in frontmatter, so only the start of each note needs reading
-  for (auto& n : index_) readAliases(n);
-  // The lists grew by doubling; give the slack back
-  index_.shrink_to_fit();
   folders_.shrink_to_fit();
-  aliases_.shrink_to_fit();
   attachments_.shrink_to_fit();
   generation_++;
-  Serial.printf("[sd] indexed %u notes in %lu ms\n", (unsigned)index_.size(), millis() - t);
+  Serial.printf("[sd] scanned %u notes in %u ms\n", (unsigned)nidx::count(), (unsigned)(millis() - t));
 }
 
-const std::vector<std::string>& notes() { return index_; }
+size_t noteCount() { return nidx::count(); }
 const std::vector<std::string>& folders() { return folders_; }
 
-uint32_t generation() { return generation_; }
+uint32_t generation() { return generation_ + nidx::generation(); }
 
 // Lower is better; -1 = no match. Prefix < word start < substring < subsequence.
 static int fuzzyScore(const std::string& name, const std::string& q) {
@@ -583,61 +650,68 @@ static int fuzzyScore(const std::string& name, const std::string& q) {
 }
 
 std::vector<std::string> search(const std::string& query, size_t maxResults) {
+  // Keep only the best few (a big vault would not fit in RAM as a full list)
   struct Hit {
     int score;
-    const std::string* path;
+    std::string path;
   };
-  std::vector<Hit> hits;
-  for (auto& p : index_) {
-    std::string name = baseName(p);
-    int sc = fuzzyScore(name, query);
+  std::vector<Hit> best;
+  auto offer = [&](int score, const std::string& path) {
+    for (auto& h : best)
+      if (h.path == path) {
+        if (score < h.score) h.score = score;
+        return;
+      }
+    best.push_back({score, path});
+    std::stable_sort(best.begin(), best.end(), [](const Hit& a, const Hit& b) {
+      return a.score != b.score ? a.score < b.score : a.path.size() < b.path.size();
+    });
+    if (best.size() > maxResults) best.pop_back();
+  };
+  nidx::forEach([&](const nidx::Note& n) {
+    int sc = fuzzyScore(baseName(n.path), query);
     if (sc < 0) {
-      // Also allow matching on the folder path
-      int ps = fuzzyScore(p.substr(1, p.size() - 4), query);
-      if (ps < 0) continue;
-      sc = 4 + ps;
+      int ps = fuzzyScore(n.path.substr(1, n.path.size() - 4), query);  // the folder path
+      if (ps >= 0) sc = 4 + ps;
     }
-    hits.push_back({sc, &p});
-  }
-  for (auto& a : aliases_) {  // notes found by an alias rank just after name matches
-    int sc = fuzzyScore(a.first, query);
-    if (sc < 0) continue;
-    bool dup = false;
-    for (auto& h : hits)
-      if (*h.path == a.second) dup = true;
-    if (!dup) hits.push_back({sc + 1, &a.second});
-  }
-  std::stable_sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) {
-    if (a.score != b.score) return a.score < b.score;
-    return a.path->size() < b.path->size();
-  });
+    for (auto& a : n.aliases) {  // found by an alias: just after name matches
+      int as = fuzzyScore(a, query);
+      if (as >= 0 && (sc < 0 || as + 1 < sc)) sc = as + 1;
+    }
+    if (sc >= 0) offer(sc, n.path);
+    return true;
+  }, false);
   std::vector<std::string> out;
-  for (auto& h : hits) {
-    if (out.size() >= maxResults) break;
-    out.push_back(*h.path);
-  }
+  for (auto& h : best) out.push_back(h.path);
   return out;
 }
 
 std::vector<Hit> backlinks(const std::string& path) {
+  // The index lists every note's links with line numbers: only matching notes are opened
   std::vector<Hit> out;
-  for (const auto& note : index_) {
-    if (note == path) continue;
+  const uint32_t id = nidx::idOf(path);
+  if (id == nidx::kNone) return out;
+  nidx::forEach([&](const nidx::Note& n) {
+    if (n.path == path) return true;
+    for (auto& l : n.links)
+      if (nidx::resolveId(l.target, n.path) == id) {
+        out.push_back({n.path, l.line, ""});
+        break;
+      }
+    return true;
+  });
+  for (auto& h : out) {  // fetch the text of each linking line
     std::string text;
-    if (!readFile(note, text)) continue;
-    for (size_t a = text.find("[["); a != std::string::npos; a = text.find("[[", a + 2)) {
-      size_t b = text.find("]]", a + 2);
-      if (b == std::string::npos) break;
-      size_t end = std::min(text.find_first_of("|#", a + 2), b);
-      if (resolveLink(text.substr(a + 2, end - a - 2), note) != path) continue;
-      size_t ls = text.rfind('\n', a);
-      ls = ls == std::string::npos ? 0 : ls + 1;
-      size_t le = text.find('\n', a);
-      std::string line = text.substr(ls, (le == std::string::npos ? text.size() : le) - ls);
-      if (line.size() > 200) line = line.substr(0, 200) + "...";
-      out.push_back({note, (int)std::count(text.begin(), text.begin() + ls, '\n'), line});
-      break;
+    if (!readFile(h.path, text)) continue;
+    size_t i = 0;
+    for (int k = 0; k < h.line && i != std::string::npos; k++) {
+      i = text.find('\n', i);
+      if (i != std::string::npos) i++;
     }
+    if (i == std::string::npos) continue;
+    size_t e = text.find('\n', i);
+    h.text = text.substr(i, (e == std::string::npos ? text.size() : e) - i);
+    if (h.text.size() > 200) h.text = h.text.substr(0, 200) + "...";
   }
   return out;
 }
@@ -691,65 +765,15 @@ std::vector<std::string> frontmatterList(const std::string& text, const char* ke
   return out;
 }
 
-const std::vector<std::pair<std::string, std::string>>& aliases() { return aliases_; }
 
 std::string linkText(const std::string& path) {
   std::string name = baseName(path);
-  int same = 0;
-  for (auto& p : index_)
-    if (strcasecmp(baseName(p).c_str(), name.c_str()) == 0) same++;
-  if (same <= 1) return name;
+  if (nidx::countWithName(name) <= 1) return name;
   return path.substr(1, path.size() - 4);  // vault path without leading '/' and ".md"
 }
 
 std::string resolveLink(const std::string& rawTarget, const std::string& fromPath) {
-  std::string target = rawTarget;
-  while (!target.empty() && target.back() == ' ') target.pop_back();
-  while (!target.empty() && target.front() == ' ') target.erase(0, 1);
-  if (target.empty()) return fromPath;  // [[#heading]] links to the current note
-  if (!endsWithCI(target, ".md")) target += ".md";
-
-  // Relative or absolute path link, e.g. [[Projects/Idea]] or [text](../Idea.md)
-  if (target.find('/') != std::string::npos) {
-    std::string abs = target[0] == '/' ? target : joinPath(parentDir(fromPath), target);
-    // Normalise "." and ".." segments
-    std::vector<std::string> parts;
-    size_t i = 0;
-    while (i <= abs.size()) {
-      size_t j = abs.find('/', i);
-      if (j == std::string::npos) j = abs.size();
-      std::string seg = abs.substr(i, j - i);
-      if (seg == "..") {
-        if (!parts.empty()) parts.pop_back();
-      } else if (!seg.empty() && seg != ".") {
-        parts.push_back(seg);
-      }
-      i = j + 1;
-    }
-    std::string norm;
-    for (auto& p : parts) norm += "/" + p;
-    for (auto& n : index_)
-      if (strcasecmp(n.c_str(), norm.c_str()) == 0) return n;
-    // Obsidian also matches a path suffix from the vault root
-    std::string suffix = target[0] == '/' ? target : "/" + target;
-    for (auto& n : index_)
-      if (endsWithCI(n, suffix)) return n;
-    return "";
-  }
-
-  // Bare name: prefer a note in the same folder, then the shortest path, then an alias.
-  std::string sameDir = joinPath(parentDir(fromPath), target);
-  std::string best;
-  for (auto& n : index_) {
-    if (strcasecmp(n.c_str(), sameDir.c_str()) == 0) return n;
-    if (endsWithCI(n, "/" + target) && (best.empty() || n.size() < best.size())) best = n;
-  }
-  if (best.empty()) {
-    const std::string name = target.substr(0, target.size() - 3);
-    for (auto& a : aliases_)
-      if (strcasecmp(a.first.c_str(), name.c_str()) == 0) return a.second;
-  }
-  return best;
+  return nidx::resolve(rawTarget, fromPath);
 }
 
 std::string parentDir(const std::string& path) {

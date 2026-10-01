@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include "clock.h"
+#include "noteindex.h"
 
 namespace vault {
 
@@ -44,28 +45,7 @@ bool inside(const std::string& p, const std::string& dir) {
   return p == dir || (p.size() > dir.size() && p.compare(0, dir.size(), dir) == 0 && p[dir.size()] == '/');
 }
 
-// Calls fn(lineNo, line) for each line outside frontmatter and fenced code
-template <typename F>
-void forEachProseLine(const std::string& text, F fn) {
-  size_t i = 0;
-  int n = 0;
-  bool front = text.compare(0, 4, "---\n") == 0, fence = false;
-  while (i <= text.size()) {
-    size_t e = text.find('\n', i);
-    if (e == std::string::npos) e = text.size();
-    std::string line = text.substr(i, e - i);
-    if (front) {
-      if (n > 0 && line == "---") front = false;
-    } else {
-      size_t s = line.find_first_not_of(" \t>");
-      bool isFence = s != std::string::npos && (line.compare(s, 3, "```") == 0 || line.compare(s, 3, "~~~") == 0);
-      if (isFence) fence = !fence;
-      else if (!fence) fn(n, line);
-    }
-    n++;
-    i = e + 1;
-  }
-}
+
 
 std::string trim(const std::string& s) {
   size_t a = s.find_first_not_of(" \t"), b = s.find_last_not_of(" \t");
@@ -78,54 +58,40 @@ std::string trim(const std::string& s) {
 // Tags
 
 std::vector<Tag> tags() {
+  // Straight from the card index: no notes are opened
   std::vector<Tag> out;
-  const auto& notes = storage::notes();
-  for (size_t ni = 0; ni < notes.size(); ni++) {
-    std::string text;
-    if (!storage::readFile(notes[ni], text)) continue;
-    auto add = [&](std::string name, int line) {
-      while (!name.empty() && name[0] == '#') name.erase(0, 1);
-      if (name.empty()) return;
-      for (auto& t : out) {
-        if (strcasecmp(t.name.c_str(), name.c_str()) == 0) {
-          if (t.refs.empty() || t.refs.back().first != ni) t.refs.push_back({(uint16_t)ni, (uint16_t)line});
-          return;
+  nidx::forEach([&](const nidx::Note& n) {
+    for (auto& t : n.tags) {
+      bool found = false;
+      for (auto& o : out) {
+        if (strcasecmp(o.name.c_str(), t.name.c_str()) == 0) {
+          if (o.refs.empty() || o.refs.back().first != n.id) o.refs.push_back({n.id, t.line});
+          found = true;
+          break;
         }
       }
-      out.push_back({name, {{(uint16_t)ni, (uint16_t)line}}});
-    };
-    for (auto& t : storage::frontmatterList(text, "tags")) add(t, 0);
-    forEachProseLine(text, [&](int n, const std::string& line) {
-      bool code = false;
-      for (size_t i = 0; i < line.size(); i++) {
-        if (line[i] == '`') code = !code;
-        if (code || line[i] != '#' || (i > 0 && line[i - 1] != ' ' && line[i - 1] != '\t')) continue;
-        size_t j = i + 1;
-        if (j >= line.size() || !(isalpha((unsigned char)line[j]) || line[j] == '_' || (uint8_t)line[j] >= 0x80)) continue;
-        while (j < line.size() && (isalnum((unsigned char)line[j]) || strchr("_-/", line[j]) || (uint8_t)line[j] >= 0x80)) j++;
-        add(line.substr(i + 1, j - i - 1), n);
-        i = j;
-      }
-    });
-  }
+      if (!found) out.push_back({t.name, {{n.id, t.line}}});
+    }
+    return true;
+  });
   std::sort(out.begin(), out.end(), [](const Tag& a, const Tag& b) { return strcasecmp(a.name.c_str(), b.name.c_str()) < 0; });
   return out;
 }
 
 std::vector<storage::Hit> tagHits(const Tag& tag) {
   std::vector<storage::Hit> out;
-  const auto& notes = storage::notes();
   for (auto& r : tag.refs) {
-    if (r.first >= notes.size()) continue;
+    std::string path = nidx::pathOf(r.first);
+    if (path.empty()) continue;
     std::string text, line;
-    storage::readFile(notes[r.first], text, 16 * 1024);
+    storage::readFile(path, text, 16 * 1024);
     size_t i = 0;
     for (int n = 0; n < r.second && i != std::string::npos; n++) {
       i = text.find('\n', i);
       if (i != std::string::npos) i++;
     }
     if (i != std::string::npos) line = trim(text.substr(i, text.find('\n', i) == std::string::npos ? std::string::npos : text.find('\n', i) - i));
-    out.push_back({notes[r.first], r.second, line});
+    out.push_back({path, r.second, line});
   }
   return out;
 }
@@ -150,19 +116,16 @@ static size_t taskBox(const std::string& line) {
 }
 
 std::vector<Task> tasks(bool includeDone, size_t maxResults) {
+  // Tasks are kept in the card index, refreshed whenever a note is saved
   std::vector<Task> out;
-  for (const auto& note : storage::notes()) {
-    if (out.size() >= maxResults) break;
-    std::string text;
-    if (!storage::readFile(note, text)) continue;
-    forEachProseLine(text, [&](int n, const std::string& line) {
-      size_t b = taskBox(line);
-      if (b == std::string::npos) return;
-      bool done = line[b + 1] != ' ';
-      if ((done && !includeDone) || out.size() >= maxResults) return;
-      out.push_back({note, n, done, trim(line.substr(b + 3))});
-    });
-  }
+  nidx::forEach([&](const nidx::Note& n) {
+    for (auto& t : n.tasks) {
+      if (t.done && !includeDone) continue;
+      if (out.size() >= maxResults) return false;
+      out.push_back({n.path, t.line, t.done, t.text});
+    }
+    return true;
+  });
   return out;
 }
 
@@ -234,8 +197,11 @@ void pathDeleted(const std::string& path) {
 
 std::vector<std::string> templates() {
   std::vector<std::string> out;
-  for (auto& n : storage::notes())
-    if (inside(n, kTemplatesDir) && n != kTemplatesDir) out.push_back(n);
+  nidx::forEach([&](const nidx::Note& n) {
+    if (inside(n.path, kTemplatesDir)) out.push_back(n.path);
+    return true;
+  }, false);
+  std::sort(out.begin(), out.end());
   return out;
 }
 
@@ -285,10 +251,11 @@ std::string dailyNote(int offsetDays, bool create) {
 
 std::string adjacentDaily(const std::string& path, int dir) {
   std::vector<std::string> days;
-  for (auto& n : storage::notes()) {
-    std::string b = storage::baseName(n);
-    if (storage::parentDir(n) == kDailyDir && b.size() == 10 && b[4] == '-' && b[7] == '-') days.push_back(n);
-  }
+  nidx::forEach([&](const nidx::Note& n) {
+    std::string b = storage::baseName(n.path);
+    if (storage::parentDir(n.path) == kDailyDir && b.size() == 10 && b[4] == '-' && b[7] == '-') days.push_back(n.path);
+    return true;
+  }, false);
   std::sort(days.begin(), days.end());
   auto it = std::find(days.begin(), days.end(), path);
   if (it == days.end()) return "";

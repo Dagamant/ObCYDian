@@ -10,11 +10,11 @@
 namespace vault {
 
 // --- Tags (inline #tags and frontmatter "tags:")
-// Kept compact (a big vault can have thousands of tag uses): each use is the note's index
-// in storage::notes() and a line number; tagHits() fetches the text for one tag on demand.
+// Kept compact (a big vault can have thousands of tag uses): each use is the note's id in
+// the card index and a line number; tagHits() fetches the text for one tag on demand.
 struct Tag {
   std::string name;  // without '#'
-  std::vector<std::pair<uint16_t, uint16_t>> refs;  // (note index, line), one per note
+  std::vector<std::pair<uint32_t, uint16_t>> refs;  // (note id in the card index, line), one per note
 };
 std::vector<Tag> tags();  // sorted by name
 std::vector<storage::Hit> tagHits(const Tag& tag);
