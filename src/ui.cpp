@@ -8,95 +8,111 @@
 
 namespace ui {
 
-static constexpr int kIconHit = 48;
+// Top bar geometry. Icons are drawn in a 20x20 box with a 2 px stroke and centred in
+// 44 px slots, so every icon has the same visual weight and spacing.
+static constexpr int kSlotW = 44;
+static constexpr int kEdge = 22;          // centre of the outermost icon from the screen edge
+static constexpr int kIconCy = (theme::BAR_H - 1) / 2;
+static constexpr float kStroke = 1.0f;    // drawWideLine radius: ~2 px lines
 
 int contentBottom() { return gfx.height() - osk::height(); }
 
-static constexpr int kSlotW = 44;
-static constexpr int kBatteryW = 52;
-static int batteryX_ = -1;  // where the current top bar put the battery indicator
-static constexpr int kRadioW = 22;
+// Status group (radio glyph, battery, percentage), right-aligned before the slots
+static constexpr int kRadioW = 16, kBatteryW = 24, kGap = 6;
+static int statusX_ = -1, statusRight_ = -1;
 
-// Small Bluetooth rune / WiFi arcs, brighter when connected
-static void drawRadio(int x) {
-  const int cy = theme::BAR_H / 2;
-  gfx.fillRect(x, 4, kRadioW, theme::BAR_H - 9, theme::BAR);
+static int pctWidth() { return gfx.textWidth("100%", font::small()); }
+
+static void line(LovyanGFX& g, float x0, float y0, float x1, float y1, uint16_t c) {
+  g.drawWideLine(x0, y0, x1, y1, kStroke, c);
+}
+
+static void ring(LovyanGFX& g, int cx, int cy, int r, uint16_t c) {
+  g.drawCircle(cx, cy, r, c);
+  g.drawCircle(cx, cy, r - 1, c);
+}
+
+static void drawRadio(int x, int cy) {
   if (radio::mode() == radio::Mode::Wifi) {
     uint16_t c = web::state() == web::State::Connected ? theme::TEXT : theme::FAINT;
-    for (int r = 4; r <= 10; r += 3) gfx.drawArc(x + 10, cy + 5, r, r - 1, 225, 315, c);
-    gfx.fillCircle(x + 10, cy + 5, 1, c);
+    const int ox = x + kRadioW / 2, oy = cy + 5;
+    gfx.drawArc(ox, oy, 10, 9, 225, 315, c);
+    gfx.drawArc(ox, oy, 6, 5, 225, 315, c);
+    gfx.fillCircle(ox, oy - 1, 1, c);
   } else if (radio::mode() == radio::Mode::Bluetooth) {
     uint16_t c = btkbd::state() == btkbd::State::Connected ? theme::TEXT : theme::FAINT;
-    int bx = x + 9;
-    gfx.drawLine(bx, cy - 7, bx, cy + 7, c);
-    gfx.drawLine(bx, cy - 7, bx + 4, cy - 3, c);
-    gfx.drawLine(bx + 4, cy - 3, bx - 4, cy + 4, c);
-    gfx.drawLine(bx, cy + 7, bx + 4, cy + 3, c);
-    gfx.drawLine(bx + 4, cy + 3, bx - 4, cy - 4, c);
+    const float bx = x + kRadioW / 2 - 1;
+    const float k = 0.7f;
+    gfx.drawWideLine(bx, cy - 7, bx, cy + 7, k, c);
+    gfx.drawWideLine(bx, cy - 7, bx + 4, cy - 3, k, c);
+    gfx.drawWideLine(bx + 4, cy - 3, bx - 4, cy + 4, k, c);
+    gfx.drawWideLine(bx, cy + 7, bx + 4, cy + 3, k, c);
+    gfx.drawWideLine(bx + 4, cy + 3, bx - 4, cy - 4, k, c);
   }
 }
 
-bool hitStatus(int x, int y) {
-  return batteryX_ >= 0 && y < theme::BAR_H && x >= batteryX_ - kRadioW && x < batteryX_ + kBatteryW;
-}
-
-static void drawBattery(int x) {
-  const int H = theme::BAR_H, cy = H / 2;
-  gfx.fillRect(x, 4, kBatteryW, H - 9, theme::BAR);
+static void drawBattery(int x, int cy) {
   if (!battery::present()) return;
   const int p = battery::percent();
   const uint16_t c = battery::charging() ? theme::OK : p <= 10 ? theme::DANGER : p <= 25 ? theme::FOLDER : theme::TEXT;
-  // Body + terminal, filled to the charge level
-  gfx.drawRoundRect(x, cy - 6, 22, 12, 2, c);
-  gfx.fillRect(x + 22, cy - 3, 2, 6, c);
-  gfx.fillRect(x + 2, cy - 4, std::max(1, 18 * p / 100), 8, c);
+  gfx.drawRoundRect(x, cy - 5, 21, 11, 2, c);   // body
+  gfx.fillRect(x + 21, cy - 2, 2, 5, c);        // terminal
+  gfx.fillRect(x + 2, cy - 3, std::max(1, 17 * p / 100), 7, c);
   if (battery::charging()) {
-    gfx.fillTriangle(x + 12, cy - 6, x + 7, cy + 1, x + 11, cy + 1, theme::BAR);
-    gfx.fillTriangle(x + 10, cy + 6, x + 15, cy - 1, x + 11, cy - 1, theme::BAR);
+    gfx.fillTriangle(x + 11, cy - 5, x + 7, cy + 1, x + 11, cy + 1, theme::BAR);
+    gfx.fillTriangle(x + 10, cy + 5, x + 14, cy - 1, x + 10, cy - 1, theme::BAR);
   }
   char buf[8];
   snprintf(buf, sizeof(buf), "%d%%", p);
   gfx.setFont(font::small());
   gfx.setTextColor(c);
   gfx.setTextDatum(textdatum_t::middle_left);
-  gfx.drawString(buf, x + 26, cy);
+  gfx.drawString(buf, x + kBatteryW + 4, cy + 1);
   gfx.setTextDatum(textdatum_t::top_left);
 }
 
-void refreshBattery() {
-  if (batteryX_ < 0) return;
-  drawBattery(batteryX_);
-  drawRadio(batteryX_ - kRadioW);
+static void drawStatus() {
+  if (statusX_ < 0) return;
+  gfx.fillRect(statusX_, 2, statusRight_ - statusX_, theme::BAR_H - 5, theme::BAR);
+  drawRadio(statusX_, kIconCy);
+  drawBattery(statusX_ + kRadioW + kGap, kIconCy);
 }
+
+void refreshBattery() { drawStatus(); }
+
+bool hitStatus(int x, int y) { return statusX_ >= 0 && y < theme::BAR_H && x >= statusX_ - 4 && x < statusRight_ + 4; }
 
 void topBar(const std::string& title, Icon left, Icon right1, Icon right2, Icon right3) {
   const int w = gfx.width(), H = theme::BAR_H;
   gfx.fillRect(0, 0, w, H - 1, theme::BAR);
   gfx.drawFastHLine(0, H - 1, w, theme::BORDER);
-  if (left != Icon::None) icon(gfx, left, 22, H / 2, theme::TEXT);
+  if (left != Icon::None) icon(gfx, left, kEdge, kIconCy, theme::TEXT);
   const Icon rights[3] = {right1, right2, right3};
   int slots = 0;
   for (int i = 0; i < 3; i++) {
     if (rights[i] == Icon::None) continue;
-    icon(gfx, rights[i], w - kSlotW / 2 - 2 - i * kSlotW, H / 2, theme::TEXT);
+    icon(gfx, rights[i], w - kEdge - i * kSlotW, kIconCy, theme::TEXT);
     slots = i + 1;
   }
-  batteryX_ = w - (slots ? slots * kSlotW + 4 : theme::MARGIN) - kBatteryW;
-  drawBattery(batteryX_);
-  drawRadio(batteryX_ - kRadioW);
-  int tx = left != Icon::None ? kIconHit : theme::MARGIN;
-  int maxW = batteryX_ - kRadioW - tx - 6;
+  // The status group ends where the first slot's icon box begins (or at the margin)
+  statusRight_ = slots ? w - kEdge - (slots - 1) * kSlotW - kSlotW / 2 - 4 : w - theme::MARGIN;
+  statusX_ = statusRight_ - (kRadioW + kGap + kBatteryW + 4 + pctWidth());
+  drawStatus();
+
+  const int tx = left != Icon::None ? 2 * kEdge : theme::MARGIN;
+  const int maxW = statusX_ - tx - 10;
   gfx.setFont(font::uiBold());
   gfx.setTextColor(theme::TEXT_BRIGHT);
   gfx.setTextDatum(textdatum_t::middle_left);
-  gfx.drawString(ellipsize(title, maxW, font::uiBold()).c_str(), tx, H / 2);
+  gfx.drawString(ellipsize(title, maxW, font::uiBold()).c_str(), tx, kIconCy + 1);
   gfx.setTextDatum(textdatum_t::top_left);
 }
 
-bool hitLeft(int x, int y) { return y < theme::BAR_H && x < kIconHit; }
+bool hitLeft(int x, int y) { return y < theme::BAR_H && x < 2 * kEdge + 4; }
+
 int hitRightSlot(int x, int y) {
   if (y >= theme::BAR_H) return -1;
-  int fromRight = gfx.width() - 2 - x;
+  int fromRight = gfx.width() - x;  // slot i spans [i*44, (i+1)*44) from the right edge
   if (fromRight < 0) return 0;
   int slot = fromRight / kSlotW;
   return slot < 3 ? slot : -1;
@@ -105,48 +121,58 @@ int hitRightSlot(int x, int y) {
 void icon(LovyanGFX& g, Icon i, int cx, int cy, uint16_t c) {
   switch (i) {
     case Icon::Back:
-      g.drawWideLine(cx + 4, cy - 8, cx - 4, cy, 1.5f, c);
-      g.drawWideLine(cx - 4, cy, cx + 4, cy + 8, 1.5f, c);
+      line(g, cx + 3, cy - 7, cx - 4, cy, c);
+      line(g, cx - 4, cy, cx + 3, cy + 7, c);
       break;
     case Icon::Gear:
+      // 2 px ring with eight short teeth and an open centre
       for (int k = 0; k < 8; k++) {
-        float a = k * PI / 4;
-        g.drawWideLine(cx + cosf(a) * 6, cy + sinf(a) * 6, cx + cosf(a) * 10, cy + sinf(a) * 10,
-                       1.8f, c);
+        float a = k * PI / 4 + PI / 8;
+        line(g, cx + cosf(a) * 7, cy + sinf(a) * 7, cx + cosf(a) * 9.5f, cy + sinf(a) * 9.5f, c);
       }
-      g.fillCircle(cx, cy, 7, c);
-      g.fillCircle(cx, cy, 3, theme::BAR);
+      ring(g, cx, cy, 7, c);
+      ring(g, cx, cy, 3, c);
       break;
     case Icon::Files:
-      for (int k = -1; k <= 1; k++) g.fillRoundRect(cx - 9, cy + k * 6 - 1, 18, 3, 1, c);
+      for (int k = -1; k <= 1; k++) line(g, cx - 8, cy + k * 6, cx + 8, cy + k * 6, c);
       break;
-    case Icon::Pencil:
-      g.drawWideLine(cx - 6, cy + 6, cx + 5, cy - 5, 2.2f, c);
-      g.fillTriangle(cx - 9, cy + 9, cx - 8, cy + 4, cx - 4, cy + 8, c);
-      g.drawWideLine(cx + 4, cy - 8, cx + 8, cy - 4, 1.2f, c);
+    case Icon::Pencil: {
+      // Outline of a pencil at 45 degrees: tip bottom-left, body to the top-right
+      const float dx = 0.7071f, dy = -0.7071f, px = 0.7071f, py = 0.7071f, w = 2.8f;
+      const float tx = cx - 8, ty = cy + 8;                    // tip
+      const float bx = tx + 6 * dx, by = ty + 6 * dy;          // where the tip meets the body
+      const float ex = tx + 19 * dx, ey = ty + 19 * dy;        // end of the body
+      line(g, tx, ty, bx + w * px, by + w * py, c);
+      line(g, tx, ty, bx - w * px, by - w * py, c);
+      line(g, bx + w * px, by + w * py, ex + w * px, ey + w * py, c);
+      line(g, bx - w * px, by - w * py, ex - w * px, ey - w * py, c);
+      line(g, ex + w * px, ey + w * py, ex - w * px, ey - w * py, c);
       break;
+    }
     case Icon::Eye:
-      g.drawEllipse(cx, cy, 11, 6, c);
-      g.drawEllipse(cx, cy, 10, 5, c);
-      g.fillCircle(cx, cy, 3, c);
+      g.drawEllipse(cx, cy, 10, 6, c);
+      g.drawEllipse(cx, cy, 9, 5, c);
+      g.fillCircle(cx, cy, 2, c);
       break;
     case Icon::More:
-      for (int k = -1; k <= 1; k++) g.fillCircle(cx, cy + k * 6, 2, c);
+      for (int k = -1; k <= 1; k++) g.fillRoundRect(cx - 2, cy + k * 6 - 2, 4, 4, 1, c);
       break;
     case Icon::Plus:
-      g.fillRoundRect(cx - 9, cy - 1, 18, 3, 1, c);
-      g.fillRoundRect(cx - 1, cy - 9, 3, 18, 1, c);
+      line(g, cx - 8, cy, cx + 8, cy, c);
+      line(g, cx, cy - 8, cx, cy + 8, c);
       break;
     case Icon::Keyboard:
-      g.drawRoundRect(cx - 11, cy - 7, 22, 14, 2, c);
-      for (int k = 0; k < 4; k++) g.fillRect(cx - 8 + k * 5, cy - 4, 3, 2, c);
-      for (int k = 0; k < 4; k++) g.fillRect(cx - 8 + k * 5, cy - 1, 3, 2, c);
-      g.fillRect(cx - 5, cy + 3, 10, 2, c);
+      g.drawRoundRect(cx - 10, cy - 7, 20, 14, 2, c);
+      g.drawRoundRect(cx - 9, cy - 6, 18, 12, 1, c);
+      for (int k = 0; k < 4; k++) {
+        g.fillRect(cx - 6 + k * 4, cy - 3, 2, 2, c);
+        g.fillRect(cx - 6 + k * 4, cy, 2, 2, c);
+      }
+      g.fillRect(cx - 4, cy + 3, 8, 1, c);
       break;
     case Icon::Search:
-      g.drawCircle(cx - 2, cy - 2, 7, c);
-      g.drawCircle(cx - 2, cy - 2, 6, c);
-      g.drawWideLine(cx + 3, cy + 3, cx + 9, cy + 9, 1.8f, c);
+      ring(g, cx - 2, cy - 2, 6, c);
+      line(g, cx + 2.5f, cy + 2.5f, cx + 7, cy + 7, c);
       break;
     case Icon::None:
       break;
