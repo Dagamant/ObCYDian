@@ -4,6 +4,7 @@
 
 #include "btkbd.h"
 #include "editor.h"
+#include "osk.h"
 #include "screens.h"
 
 namespace app {
@@ -44,6 +45,14 @@ struct Dialog {
 } dialog;
 
 uint32_t toastUntil = 0;
+bool keyboardHiddenByUser = false;  // don't keep popping it up once dismissed
+bool gestureOnKeyboard = false;     // the current touch started on the keyboard
+
+// Show the keyboard on text screens when no physical keyboard is connected.
+void autoKeyboard() {
+  if (!current || !current->acceptsText()) osk::hide();
+  else if (btkbd::state() != btkbd::State::Connected && !keyboardHiddenByUser) osk::show();
+}
 
 void leaveCurrent() {
   if (!current) return;
@@ -82,6 +91,7 @@ void show() {
       current = &powerScreen;
       break;
   }
+  autoKeyboard();
   redraw();
 }
 
@@ -194,13 +204,33 @@ void begin() {
 
 void redraw() {
   if (current) current->draw();
+  osk::draw();
   if (dialog.active) drawDialog();
+}
+
+void toggleKeyboard() {
+  osk::toggle();
+  keyboardHiddenByUser = !osk::visible();
+  redraw();
 }
 
 void handle(const input::Event& e) {
   using namespace input;
-  if (dialog.active) return dialogInput(e);
+  if (dialog.active) {
+    if (e.type == Type::Tap || e.type == Type::Key) dialogInput(e);
+    return;
+  }
   if (!current) return;
+  // On-screen keyboard gets touches that start on it
+  if (e.type == Type::Down) {
+    gestureOnKeyboard = osk::onDown(e.x, e.y);
+    return;
+  }
+  if (gestureOnKeyboard && (e.type == Type::Drag || e.type == Type::DragEnd)) {
+    if (e.type == Type::DragEnd) osk::cancelPress();
+    return;
+  }
+  if (e.type == Type::Tap && osk::onTap(e.x, e.y)) return;
   if (e.type == Type::Key && e.ctrl() && e.key == K_CHAR && current != &switcher) {
     if (e.ch == 'o') return openSwitcher(SwitcherMode::Open, contextDir());
     if (e.ch == 'n') return openSwitcher(SwitcherMode::New, contextDir());
@@ -347,7 +377,7 @@ void noteDeleted(const std::string& path) {
 void toast(const std::string& msg, uint32_t ms) {
   gfx.setFont(font::ui());
   int tw = std::min<int>(gfx.textWidth(msg.c_str()) + 32, gfx.width() - 20);
-  int x = (gfx.width() - tw) / 2, y = gfx.height() - 60;
+  int x = (gfx.width() - tw) / 2, y = ui::contentBottom() - 60;
   gfx.fillRoundRect(x, y, tw, 36, 8, theme::BORDER);
   gfx.setTextColor(theme::TEXT_BRIGHT);
   gfx.setTextDatum(textdatum_t::middle_center);

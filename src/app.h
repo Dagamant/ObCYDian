@@ -19,6 +19,8 @@ class Screen {
   virtual void onLeave() {}
   virtual void tick() {}
   virtual int scroll() const { return 0; }
+  // Screens that take typed text get the on-screen keyboard.
+  virtual bool acceptsText() const { return false; }
 };
 
 namespace app {
@@ -64,6 +66,8 @@ std::string currentNote(bool* editing);
 void prepareSleep();
 
 void redraw();
+// Shows/hides the on-screen keyboard and relays out the current screen.
+void toggleKeyboard();
 void toast(const std::string& msg, uint32_t ms = 2000);
 void confirm(const std::string& title, const std::string& message, const char* okLabel,
              uint16_t okColor, std::function<void()> onOk);

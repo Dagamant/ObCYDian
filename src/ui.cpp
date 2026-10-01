@@ -1,8 +1,12 @@
 #include "ui.h"
 
+#include "osk.h"
+
 namespace ui {
 
 static constexpr int kIconHit = 48;
+
+int contentBottom() { return gfx.height() - osk::height(); }
 
 static constexpr int kSlotW = 44;
 
@@ -70,6 +74,12 @@ void icon(LovyanGFX& g, Icon i, int cx, int cy, uint16_t c) {
     case Icon::Plus:
       g.fillRoundRect(cx - 9, cy - 1, 18, 3, 1, c);
       g.fillRoundRect(cx - 1, cy - 9, 3, 18, 1, c);
+      break;
+    case Icon::Keyboard:
+      g.drawRoundRect(cx - 11, cy - 7, 22, 14, 2, c);
+      for (int k = 0; k < 4; k++) g.fillRect(cx - 8 + k * 5, cy - 4, 3, 2, c);
+      for (int k = 0; k < 4; k++) g.fillRect(cx - 8 + k * 5, cy - 1, 3, 2, c);
+      g.fillRect(cx - 5, cy + 3, 10, 2, c);
       break;
     case Icon::None:
       break;

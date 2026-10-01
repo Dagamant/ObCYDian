@@ -49,6 +49,7 @@ class ToolsScreen : public Screen {
 class SwitcherScreen : public Screen {
  public:
   void open(app::SwitcherMode mode, const std::string& dir, const std::string& path);
+  bool acceptsText() const override { return true; }
   void draw() override;
   void onTap(int x, int y) override;
   void onKey(const input::Event& e) override;
@@ -102,6 +103,7 @@ class PromptScreen : public Screen {
  public:
   void open(const std::string& title, const std::string& hint, const std::string& initial, bool secret,
             std::function<void(const std::string&)> done);
+  bool acceptsText() const override { return true; }
   void draw() override;
   void onTap(int x, int y) override;
   void onKey(const input::Event& e) override;

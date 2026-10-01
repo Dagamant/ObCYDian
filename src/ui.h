@@ -13,7 +13,10 @@ struct Rect {
   bool contains(int px, int py) const { return px >= x && px < x + w && py >= y && py < y + h; }
 };
 
-enum class Icon { None, Back, Gear, Files, Pencil, Eye, More, Plus };
+enum class Icon { None, Back, Gear, Files, Pencil, Eye, More, Plus, Keyboard };
+
+// Bottom edge of the area screens may draw in (above the on-screen keyboard).
+int contentBottom();
 
 // Title bar with an optional left icon and up to three right icons (right1 is rightmost).
 void topBar(const std::string& title, Icon left, Icon right1 = Icon::None,

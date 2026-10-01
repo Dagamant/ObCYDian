@@ -4,6 +4,7 @@
 #include <functional>
 
 #include "display.h"
+#include "osk.h"
 #include "storage.h"
 #include "textfont.h"
 #include "theme.h"
@@ -535,7 +536,10 @@ void EditorScreen::layoutLine(int i, bool revealed, Layout& L) {
 // ===========================================================================
 // Drawing
 
-int EditorScreen::viewH() const { return gfx.height() - theme::BAR_H - kStatusH; }
+// The status bar gives way to the on-screen keyboard when that is up.
+int EditorScreen::viewH() const {
+  return ui::contentBottom() - theme::BAR_H - (osk::visible() ? 0 : kStatusH);
+}
 
 int EditorScreen::lineAtY(int32_t y) const {
   int lo = 0, hi = tops_.size() - 1;
@@ -762,6 +766,7 @@ void EditorScreen::drawLineOnly(int line) {
 }
 
 void EditorScreen::drawStatus() {
+  if (osk::visible()) return;
   const int y = gfx.height() - kStatusH, W = gfx.width();
   gfx.fillRect(0, y, W, kStatusH, theme::BAR);
   gfx.setFont(font::small());
@@ -791,11 +796,13 @@ void EditorScreen::drawStatus() {
 
 void EditorScreen::drawTitle() {
   ui::topBar(tf::toAscii(storage::baseName(path_)) + (dirty_ ? " *" : ""), ui::Icon::Back,
-             ui::Icon::More, reading_ ? ui::Icon::Pencil : ui::Icon::Eye);
+             ui::Icon::More, reading_ ? ui::Icon::Pencil : ui::Icon::Eye,
+             reading_ ? ui::Icon::None : ui::Icon::Keyboard);
   titleDirty_ = dirty_;
 }
 
 void EditorScreen::draw() {
+  if (!reading_) ensureCursorVisible();  // the view may have shrunk for the keyboard
   drawTitle();
   drawContent();
   drawStatus();
@@ -1445,7 +1452,8 @@ void EditorScreen::onTap(int x, int y) {
   int slot = ui::hitRightSlot(x, y);
   if (slot == 1) return reading_ ? app::editNote(path_) : app::viewNote(path_);
   if (slot == 0) return app::noteMenu(path_);
-  if (y < theme::BAR_H || y >= gfx.height() - kStatusH) return;
+  if (slot == 2 && !reading_) return app::toggleKeyboard();
+  if (y < theme::BAR_H || y >= theme::BAR_H + viewH()) return;
 
   const int cy = y - theme::BAR_H;
   const int prevLine = cursorLine_;

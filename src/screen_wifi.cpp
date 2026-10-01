@@ -74,7 +74,7 @@ void WifiScreen::drawBody() {
   btnNetwork_ = {M, by, bw, 44};
   btnForget_ = {M + bw + 8, by, bw, 44};
   btnMode_ = {M + 2 * (bw + 8), by, bw, 44};
-  ui::button(btnNetwork_, "Set network", app::keyboardAvailable() ? theme::BORDER : theme::BG_ALT);
+  ui::button(btnNetwork_, "Set network", theme::BORDER);
   ui::button(btnForget_, "Forget", saved.empty() ? theme::BG_ALT : theme::BORDER);
   ui::button(btnMode_, wifiMode ? "Use Bluetooth" : "Use WiFi", theme::ACCENT_BG);
 }
@@ -87,10 +87,6 @@ void WifiScreen::tick() {
 }
 
 void WifiScreen::setNetwork() {
-  if (!app::keyboardAvailable()) {
-    app::toast(radio::mode() == radio::Mode::Wifi ? "Use the setup page in a browser" : "Connect a keyboard first", 2500);
-    return;
-  }
   app::prompt("WiFi network name", "The network the device should join", web::savedSsid(), false,
               [](const std::string& ssid) {
                 if (ssid.empty()) return;
@@ -143,8 +139,8 @@ void PromptScreen::open(const std::string& title, const std::string& hint, const
 }
 
 void PromptScreen::draw() {
-  ui::topBar(title_, ui::Icon::Back);
-  gfx.fillRect(0, theme::BAR_H, gfx.width(), gfx.height() - theme::BAR_H, theme::BG);
+  ui::topBar(title_, ui::Icon::Back, ui::Icon::Keyboard);
+  gfx.fillRect(0, theme::BAR_H, gfx.width(), ui::contentBottom() - theme::BAR_H, theme::BG);
   gfx.setFont(font::ui());
   gfx.setTextColor(theme::MUTED);
   gfx.drawString(tf::toAscii(hint_).c_str(), theme::MARGIN + 4, theme::BAR_H + 14);
@@ -205,5 +201,6 @@ void PromptScreen::onKey(const input::Event& e) {
 }
 
 void PromptScreen::onTap(int x, int y) {
-  if (ui::hitLeft(x, y)) app::back();
+  if (ui::hitLeft(x, y)) return app::back();
+  if (ui::hitRight(x, y)) app::toggleKeyboard();
 }

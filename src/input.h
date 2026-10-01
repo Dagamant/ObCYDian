@@ -6,7 +6,7 @@
 
 namespace input {
 
-enum class Type { None, Tap, Drag, DragEnd, Key };
+enum class Type { None, Down, Tap, Drag, DragEnd, Key };  // Down: finger touched
 
 enum Key : uint8_t {
   K_NONE,

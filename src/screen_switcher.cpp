@@ -1,3 +1,4 @@
+#include "osk.h"
 #include "screens.h"
 
 static constexpr int kInputY = theme::BAR_H + 8;
@@ -5,6 +6,9 @@ static constexpr int kInputH = 40;
 static constexpr int kListY = kInputY + kInputH + 12;
 static constexpr int kRowH = 36;
 static constexpr int kMaxRows = 6;
+
+// Rows that fit above the on-screen keyboard
+static int maxRows() { return std::max(1, std::min(kMaxRows, (ui::contentBottom() - kListY) / kRowH)); }
 
 void SwitcherScreen::open(app::SwitcherMode mode, const std::string& dir, const std::string& path) {
   mode_ = mode;
@@ -32,13 +36,13 @@ void SwitcherScreen::refresh() {
   results_.clear();
   offerCreate_ = false;
   if (mode_ == app::SwitcherMode::Open) {
-    results_ = storage::search(query_, kMaxRows);
+    results_ = storage::search(query_, maxRows());
     if (!query_.empty()) {
       bool exact = false;
       for (auto& r : results_)
         if (strcasecmp(storage::baseName(r).c_str(), query_.c_str()) == 0) exact = true;
       offerCreate_ = !exact;
-      if (offerCreate_ && results_.size() == kMaxRows) results_.pop_back();
+      if (offerCreate_ && (int)results_.size() == maxRows()) results_.pop_back();
     }
   }
   int n = results_.size() + (offerCreate_ ? 1 : 0);
@@ -49,8 +53,9 @@ void SwitcherScreen::draw() {
   const char* title = mode_ == app::SwitcherMode::Open  ? "Open note"
                       : mode_ == app::SwitcherMode::New ? "New note"
                                                         : "Rename note";
-  ui::topBar(title, ui::Icon::Back);
-  gfx.fillRect(0, theme::BAR_H, gfx.width(), gfx.height() - theme::BAR_H, theme::BG);
+  ui::topBar(title, ui::Icon::Back, ui::Icon::Keyboard);
+  refresh();  // the keyboard may have changed how many rows fit
+  gfx.fillRect(0, theme::BAR_H, gfx.width(), ui::contentBottom() - theme::BAR_H, theme::BG);
   drawInput();
   drawList();
 }
@@ -82,7 +87,7 @@ void SwitcherScreen::drawInput() {
 
 void SwitcherScreen::drawList() {
   const int W = gfx.width();
-  gfx.fillRect(0, kListY, W, gfx.height() - kListY, theme::BG);
+  gfx.fillRect(0, kListY, W, ui::contentBottom() - kListY, theme::BG);
   gfx.setTextDatum(textdatum_t::middle_left);
   if (mode_ != app::SwitcherMode::Open) {
     std::string t = target();
@@ -215,6 +220,7 @@ void SwitcherScreen::onKey(const input::Event& e) {
 
 void SwitcherScreen::onTap(int x, int y) {
   if (ui::hitLeft(x, y)) return app::back();
+  if (ui::hitRight(x, y)) return app::toggleKeyboard();
   if (mode_ != app::SwitcherMode::Open || y < kListY) return;
   int i = (y - kListY) / kRowH;
   int n = results_.size() + (offerCreate_ ? 1 : 0);

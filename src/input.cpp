@@ -39,7 +39,11 @@ bool poll(Event& e) {
     dragging = false;
     startX = lastX = x;
     startY = lastY = y;
-    return false;
+    e = Event();
+    e.type = Type::Down;
+    e.x = x;
+    e.y = y;
+    return true;
   }
   if (now && down) {
     if (!dragging && abs(y - startY) > kDragThreshold) {

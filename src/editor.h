@@ -27,6 +27,7 @@ class EditorScreen : public Screen {
   void onLeave() override;
   void tick() override;
   int scroll() const override { return scroll_; }
+  bool acceptsText() const override { return !reading_; }
 
   // Layout structures (public so the implementation's helpers can use them)
   struct Seg {

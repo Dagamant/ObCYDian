@@ -74,8 +74,19 @@ void setup() {
 void loop() {
   debug_console::poll();
   input::Event e;
-  while (input::poll(e))
-    if (!power::activity()) app::handle(e);  // the first touch/key with the screen off just wakes it
+  // A touch that wakes the screen is swallowed until the finger lifts
+  static bool swallowTouch = false;
+  while (input::poll(e)) {
+    if (swallowTouch) {
+      if (e.type == input::Type::Tap || e.type == input::Type::DragEnd) swallowTouch = false;
+      continue;
+    }
+    if (power::activity()) {
+      swallowTouch = e.type == input::Type::Down || e.type == input::Type::Drag;
+      continue;
+    }
+    app::handle(e);
+  }
   while (btkbd::poll(e))
     if (!power::activity()) app::handle(e);
   app::loop();
