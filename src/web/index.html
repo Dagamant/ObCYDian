@@ -698,7 +698,7 @@ async function showSettings() {
   try { s = await (await api("GET", "/api/status")).json(); } catch (e) {}
   main.innerHTML = '<div class="page"><div class="head"><h1>Device</h1></div><div class="card">' +
     "<div><b>Mode:</b> " + esc(s.mode || "?") + "</div><div><b>Network:</b> " + esc(s.ssid || "-") + (s.ap ? " (setup network)" : "") + "</div>" +
-    "<div><b>Address:</b> " + esc(s.ip || "-") + (s.ap ? "" : " &middot; http://obcydian.local") + "</div><div><b>Notes:</b> " + (s.notes ?? "?") + (s.card === false ? " (no SD card!)" : "") + '</div><div class="status">Free memory: ' + Math.round((s.heap || 0) / 1024) + " KB</div></div>" +
+    "<div><b>Address:</b> " + esc(s.ip || "-") + (s.ap ? "" : " &middot; http://obcydian.local") + "</div><div><b>Battery:</b> " + (s.battery == null ? "not detected" : s.battery + "% (" + (+s.volts).toFixed(2) + " V" + (s.charging ? ", charging" : "") + ")") + "</div><div><b>Notes:</b> " + (s.notes ?? "?") + (s.card === false ? " (no SD card!)" : "") + '</div><div class="status">Free memory: ' + Math.round((s.heap || 0) / 1024) + " KB</div></div>" +
     '<div class="card"><b>WiFi network</b><div class="status">The device joins this network at startup. ' + (s.ap ? "After saving, connect this phone/computer to the same network and open http://obcydian.local" : "") + "</div>" +
     '<label>Network name</label><input id="ssid" list="nets" value="' + esc(s.savedSsid || "") + '"><datalist id="nets"></datalist>' +
     '<label>Password</label><input id="pass" type="password" autocomplete="off">' +

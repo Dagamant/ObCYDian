@@ -1,3 +1,4 @@
+#include "battery.h"
 #include "power.h"
 #include "screens.h"
 #include "touch_calib.h"
@@ -41,7 +42,7 @@ void PowerScreen::drawRows() {
   const int W = gfx.width(), M = theme::MARGIN;
   const int vx = 250, vw = W - M - vx;
   int y = theme::BAR_H + 14;
-  gfx.fillRect(0, y, W, 200, theme::BG);
+  gfx.fillRect(0, y, W, 206, theme::BG);
 
   auto label = [&](const char* text, const char* sub) {
     gfx.setFont(font::ui());
@@ -79,8 +80,17 @@ void PowerScreen::drawRows() {
 
   gfx.setFont(font::small());
   gfx.setTextColor(theme::MUTED);
-  gfx.drawString("BOOT button: press = screen on/off, hold 2 s = sleep.", M + 4, y);
-  gfx.drawString("Touch the screen or press BOOT to wake.", M + 4, y + 16);
+  char bat[64];
+  if (battery::present())
+    snprintf(bat, sizeof(bat), "Battery: %.2f V, about %d%%%s", battery::voltage(), battery::percent(),
+             battery::charging() ? " (charging)" : "");
+  else
+    snprintf(bat, sizeof(bat), "Battery: not detected");
+  gfx.setTextColor(theme::TEXT);
+  gfx.drawString(bat, M + 4, y);
+  gfx.setTextColor(theme::MUTED);
+  gfx.drawString("BOOT button: press = screen on/off, hold 2 s = sleep.", M + 4, y + 16);
+  gfx.drawString("Touch the screen or press BOOT to wake.", M + 4, y + 32);
 }
 
 void PowerScreen::onTap(int x, int y) {

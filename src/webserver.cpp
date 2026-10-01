@@ -7,6 +7,7 @@
 #include <WiFi.h>
 
 #include "app.h"
+#include "battery.h"
 #include "power.h"
 #include "radio.h"
 #include "storage.h"
@@ -130,7 +131,10 @@ void handleStatus() {
                   ",\"ap\":" + (state_ == State::AccessPoint ? "true" : "false") + ",\"ip\":" + q(ip()) +
                   ",\"card\":" + (storage::state() == storage::State::Mounted ? "true" : "false") +
                   ",\"notes\":" + std::to_string(storage::notes().size()) +
-                  ",\"heap\":" + std::to_string(ESP.getFreeHeap()) + "}";
+                  ",\"heap\":" + std::to_string(ESP.getFreeHeap()) +
+                  ",\"battery\":" + (battery::present() ? std::to_string(battery::percent()) : "null") +
+                  ",\"volts\":" + std::to_string(battery::voltage()) +
+                  ",\"charging\":" + (battery::charging() ? "true" : "false") + "}";
   sendJson(200, j);
 }
 

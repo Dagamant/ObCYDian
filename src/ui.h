@@ -21,6 +21,8 @@ int contentBottom();
 // Title bar with an optional left icon and up to three right icons (right1 is rightmost).
 void topBar(const std::string& title, Icon left, Icon right1 = Icon::None,
             Icon right2 = Icon::None, Icon right3 = Icon::None);
+// Redraws just the battery indicator in the current top bar (when the level changes).
+void refreshBattery();
 bool hitLeft(int x, int y);
 // Index of the right-hand icon slot under (x, y): 0 = rightmost, -1 = none.
 int hitRightSlot(int x, int y);

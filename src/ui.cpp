@@ -1,5 +1,6 @@
 #include "ui.h"
 
+#include "battery.h"
 #include "osk.h"
 
 namespace ui {
@@ -9,6 +10,35 @@ static constexpr int kIconHit = 48;
 int contentBottom() { return gfx.height() - osk::height(); }
 
 static constexpr int kSlotW = 44;
+static constexpr int kBatteryW = 52;
+static int batteryX_ = -1;  // where the current top bar put the battery indicator
+
+static void drawBattery(int x) {
+  const int H = theme::BAR_H, cy = H / 2;
+  gfx.fillRect(x, 4, kBatteryW, H - 9, theme::BAR);
+  if (!battery::present()) return;
+  const int p = battery::percent();
+  const uint16_t c = battery::charging() ? theme::OK : p <= 10 ? theme::DANGER : p <= 25 ? theme::FOLDER : theme::TEXT;
+  // Body + terminal, filled to the charge level
+  gfx.drawRoundRect(x, cy - 6, 22, 12, 2, c);
+  gfx.fillRect(x + 22, cy - 3, 2, 6, c);
+  gfx.fillRect(x + 2, cy - 4, std::max(1, 18 * p / 100), 8, c);
+  if (battery::charging()) {
+    gfx.fillTriangle(x + 12, cy - 6, x + 7, cy + 1, x + 11, cy + 1, theme::BAR);
+    gfx.fillTriangle(x + 10, cy + 6, x + 15, cy - 1, x + 11, cy - 1, theme::BAR);
+  }
+  char buf[8];
+  snprintf(buf, sizeof(buf), "%d%%", p);
+  gfx.setFont(font::small());
+  gfx.setTextColor(c);
+  gfx.setTextDatum(textdatum_t::middle_left);
+  gfx.drawString(buf, x + 26, cy);
+  gfx.setTextDatum(textdatum_t::top_left);
+}
+
+void refreshBattery() {
+  if (batteryX_ >= 0) drawBattery(batteryX_);
+}
 
 void topBar(const std::string& title, Icon left, Icon right1, Icon right2, Icon right3) {
   const int w = gfx.width(), H = theme::BAR_H;
@@ -22,8 +52,10 @@ void topBar(const std::string& title, Icon left, Icon right1, Icon right2, Icon 
     icon(gfx, rights[i], w - kSlotW / 2 - 2 - i * kSlotW, H / 2, theme::TEXT);
     slots = i + 1;
   }
+  batteryX_ = w - (slots ? slots * kSlotW + 4 : theme::MARGIN) - kBatteryW;
+  drawBattery(batteryX_);
   int tx = left != Icon::None ? kIconHit : theme::MARGIN;
-  int maxW = w - tx - (slots ? slots * kSlotW + 4 : theme::MARGIN);
+  int maxW = batteryX_ - tx - 6;
   gfx.setFont(font::uiBold());
   gfx.setTextColor(theme::TEXT_BRIGHT);
   gfx.setTextDatum(textdatum_t::middle_left);

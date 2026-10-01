@@ -244,6 +244,12 @@ static void run(const std::string& line) {
     for (size_t i = 0; i < found.size(); i++)
       Serial.printf("  %u: %s %s (type %u) %d dBm\n", (unsigned)i, found[i].name.c_str(), found[i].addr.c_str(),
                     found[i].addrType, found[i].rssi);
+  } else if (s == "adc") {
+    for (int pin : {34, 35, 39}) {
+      uint32_t sum = 0;
+      for (int i = 0; i < 16; i++) sum += analogReadMilliVolts(pin);
+      Serial.printf("GPIO%d: %u mV\n", pin, sum / 16);
+    }
   } else if (s == "sleep") {
     power::deepSleep();
   } else if (s == "screen") {
