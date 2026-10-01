@@ -48,7 +48,8 @@ void WifiScreen::drawBody() {
         line("open this in a browser:", theme::MUTED, font::ui(), 28);
         line(web::url(), theme::ACCENT, font::uiBold(), 26);
         line("http://obcydian.local/", theme::ACCENT, font::uiBold(), 30);
-        line("or scan the code.", theme::MUTED);
+        line("or scan the code.", theme::MUTED, font::ui(), 28);
+        line("Obsidian sync (WebDAV): port 8080", theme::MUTED);
         gfx.qrcode(web::url().c_str(), qx, qy, qr, 3);
         break;
       }

@@ -11,6 +11,7 @@
 
 #include "battery.h"
 #include "clock.h"
+#include "dav.h"
 #include "power.h"
 #include "radio.h"
 #include "storage.h"
@@ -558,6 +559,7 @@ void startServer() {
   server.collectHeaders(headers, 1);
   server.begin();
   serverStarted_ = true;
+  dav::begin();
 }
 
 void startAccessPoint() {
@@ -633,7 +635,10 @@ void loop() {
       }
     }
   }
-  if (serverStarted_) server.handleClient();
+  if (serverStarted_) {
+    server.handleClient();
+    dav::loop();
+  }
 }
 
 State state() { return state_; }

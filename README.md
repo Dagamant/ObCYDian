@@ -45,6 +45,9 @@ An [Obsidian](https://obsidian.md)-style markdown notes app for the 3.5" ESP32 "
 - **Templates** from `/Templates`, with `{{title}}`, `{{date}}`, `{{time}}` and `{{date:FORMAT}}` filled in.
 - **Daily notes** (Ctrl+D) in `/Daily/YYYY-MM-DD.md`, created from `Templates/Daily.md` if it exists. The board has no battery-backed clock: it gets the time from the internet in WiFi mode, or from the browser when the web app is open, keeps it through deep sleep, and asks for the date if it isn't set.
 - `%%comments%%` are hidden, and frontmatter `aliases:` work in links and the quick switcher.
+- **Images** on their own line (`![[photo.jpg]]`, `![[photo.jpg|300]]`, `![](pic.png)`) are drawn from the card (JPEG, PNG, BMP), scaled to fit.
+- **Embeds** on their own line (`![[Note]]`, `![[Note#Heading]]`) show the start of that note or section as a card; tap it to open the note.
+- **Light and dark themes** (Settings → Display & power).
 
 **Editor**
 - Live preview, like Obsidian: formatting is rendered as you type, and the markdown syntax only shows on the line you're editing. There's also a reading view.
@@ -61,7 +64,15 @@ An [Obsidian](https://obsidian.md)-style markdown notes app for the 3.5" ESP32 "
 **WiFi web app**
 - In WiFi mode the device serves the vault as a web app at `http://obcydian.local/`.
 - The web app has a file tree, search, rendered notes, backlinks, a markdown editor (toolbar, live preview, link autocomplete) and folder management.
+- **Graph view**: the interactive link graph of the whole vault, or of one note's neighbourhood.
+- **Backup**: download the whole vault as a .zip, and upload files or folders into it.
 - With no WiFi configured, it creates a setup network with a captive portal. The screen shows a QR code to join it.
+
+**Sync with Obsidian**
+- In WiFi mode the device also runs a WebDAV server on port 8080, so Obsidian on a computer or phone can sync with it using the [Remotely Save](https://github.com/remotely-save/remotely-save) plugin.
+- In Remotely Save, choose **WebDAV**, set the address to `http://<device IP>:8080`, and leave the username and password empty. Leave the remote folder at its default (the vault name); the device maps it onto the root of the card.
+- On phones, use the numeric IP address: `.local` names often don't resolve there.
+- There is no password, so anyone on your network can read and change the vault while WiFi mode is on.
 
 **Device**
 - Bluetooth and WiFi are mutually exclusive, to keep enough RAM free. Switch between them from the top-bar quick menu (tap the battery icon); the device restarts to change.
