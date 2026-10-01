@@ -40,7 +40,8 @@ enum : uint16_t {
 enum : uint8_t { KD_TEXT, KD_MARK, KD_BULLET, KD_CHECK, KD_CHECK_DONE, KD_RULE };
 
 // Line block kinds
-enum : uint8_t { BL_TEXT, BL_CODE, BL_FENCE, BL_FRONT, BL_COMMENT };
+enum : uint8_t { BL_TEXT, BL_CODE, BL_FENCE, BL_FRONT, BL_COMMENT, BL_EMBED, BL_IMAGE };
+constexpr int kImageMaxH = 220;
 
 // Block state carried from line to line
 enum : uint8_t { SS_CODE = 1, SS_FRONT = 2, SS_TILDE = 4, SS_COMMENT = 64 };
@@ -448,15 +449,23 @@ void EditorScreen::layoutLine(int i, bool revealed, Layout& L) {
   L.segs.clear();
   L.rows.clear();
   L.rowEnd.clear();
+  L.alt.clear();
+  L.media.clear();
 
   const char* p = text_.data() + lines_[i].start;
-  const uint32_t n = lineLen(i);
+  uint32_t n = lineLen(i);
   const uint8_t st = lines_[i].stateIn;
   const int M = theme::MARGIN;
   uint32_t fw = 0;
   while (fw < n && (p[fw] == ' ' || p[fw] == '\t')) fw++;
   uint32_t contentStart = 0;
 
+  // A line that is only an embed (![[Note]] or an image) becomes a card / picture
+  if (!revealed && !(st & (SS_FRONT | SS_CODE | SS_COMMENT)) && embedLine(p + fw, n - fw, L)) {
+    if (L.block == BL_IMAGE) return;
+    p = L.alt.data();  // lay out the card's text instead of the source line
+    n = L.alt.size();
+  } else
   // Fence lines (``` and the --- around frontmatter) are syntax: hidden unless revealed.
   if ((st & SS_COMMENT) || (!(st & (SS_FRONT | SS_CODE)) && startsWith(p, n, fw, "%%") &&
                             !memmem(p + fw + 2, n - fw - 2, "%%", 2))) {
@@ -555,6 +564,7 @@ void EditorScreen::layoutLine(int i, bool revealed, Layout& L) {
       uint32_t cp;
       int len = tf::decodeUtf8(p, n, k, &cp);
       if (cp == '\t') w[k] = kTabW;
+      else if (cp == '\n') w[k] = 0;
       else if (cp < 0x80) w[k] = tf::advance(f, (char)cp);
       else if (int adv = tf::glyphAdvance(f, cp); adv >= 0) w[k] = adv;
       else {
@@ -567,7 +577,7 @@ void EditorScreen::layoutLine(int i, bool revealed, Layout& L) {
 
   // --- Wrap into rows
   const bool boxed = L.block != BL_TEXT;
-  const int x0 = boxed ? M + 8 : M + (revealed ? 0 : L.quote * kQuoteW);
+  const int x0 = L.block == BL_EMBED ? M + 14 : boxed ? M + 8 : M + (revealed ? 0 : L.quote * kQuoteW);
   const int right = gfx.width() - M - (boxed ? 8 : 4);
   int hang = x0;
   if (!boxed)
@@ -580,6 +590,17 @@ void EditorScreen::layoutLine(int i, bool revealed, Layout& L) {
   uint32_t rowStart = 0;
   int64_t lastBreak = -1;
   for (uint32_t k = 0; k < n; k++) {
+    if (p[k] == '\n' && r < 250) {  // embed card text: one row per source line
+      L.x[k] = x;
+      L.row[k] = r;
+      L.rows.push_back({rowStart, k + 1, 0, 0, 0});
+      L.rowEnd.push_back(x);
+      r++;
+      rowStart = k + 1;
+      x = x0;
+      lastBreak = -1;
+      continue;
+    }
     if (w[k] > 0 && x + w[k] > right && k > rowStart && r < 250) {
       uint32_t brk = (lastBreak > (int64_t)rowStart && lastBreak <= (int64_t)k) ? lastBreak : k;
       L.rows.push_back({rowStart, brk, 0, 0, 0});
@@ -623,6 +644,10 @@ void EditorScreen::layoutLine(int i, bool revealed, Layout& L) {
     y += row.h;
   }
   L.height = y + (L.heading ? 2 : 0);
+  if (L.block == BL_EMBED) {  // padding inside the card
+    for (auto& row : L.rows) row.top += 6;
+    L.height += 14;
+  }
   if (!revealed && L.block == BL_COMMENT) {  // hidden comment line: (almost) no space
     L.rows.resize(1);
     L.rows[0] = {0, n, 0, 2, 3};
@@ -633,6 +658,149 @@ void EditorScreen::layoutLine(int i, bool revealed, Layout& L) {
     L.rows[0] = {0, n, 0, 8, 10};
     L.height = 10;
   }
+}
+
+// Recognises a whole-line embed: ![[target|opt]] or ![alt](target). For images it sets up
+// an image block; for notes it builds the card text in L.alt. Returns false if the line
+// isn't an embed (or the target can't be found).
+bool EditorScreen::embedLine(const char* p, uint32_t n, Layout& L) {
+  while (n && (p[n - 1] == ' ' || p[n - 1] == '\t')) n--;
+  std::string target, opt;
+  if (n > 5 && memcmp(p, "![[", 3) == 0 && memcmp(p + n - 2, "]]", 2) == 0) {
+    std::string inner(p + 3, n - 5);
+    if (inner.find("]]") != std::string::npos) return false;
+    size_t bar = inner.find('|');
+    target = inner.substr(0, bar);
+    if (bar != std::string::npos) opt = inner.substr(bar + 1);
+  } else if (n > 5 && p[0] == '!' && p[1] == '[' && p[n - 1] == ')') {
+    std::string s(p, n);
+    size_t mid = s.find("](");
+    if (mid == std::string::npos || s.find(')') != n - 1) return false;
+    target = s.substr(mid + 2, n - mid - 3);
+    if (target.find("://") != std::string::npos) return false;
+    std::string dec;  // %20 etc.
+    for (size_t i = 0; i < target.size(); i++) {
+      if (target[i] == '%' && i + 2 < target.size()) {
+        dec += (char)strtol(target.substr(i + 1, 2).c_str(), nullptr, 16);
+        i += 2;
+      } else {
+        dec += target[i];
+      }
+    }
+    target = dec;
+  } else {
+    return false;
+  }
+  const int W = gfx.width(), M = theme::MARGIN;
+
+  if (storage::isImageName(target)) {
+    std::string path = storage::resolveAttachment(target, path_);
+    if (path.empty()) return false;
+    auto it = imgSizes_.find(path);
+    if (it == imgSizes_.end()) {
+      int w = 0, h = 0;
+      if (!storage::imageSize(path, &w, &h)) w = h = 0;
+      it = imgSizes_.emplace(path, std::make_pair(w, h)).first;
+    }
+    const int iw = it->second.first, ih = it->second.second;
+    if (iw <= 0 || ih <= 0) return false;
+    // Obsidian's ![[img.png|300]] sets the width
+    float want = std::min<float>(iw, W - 2 * M);
+    if (atoi(opt.c_str()) > 0) want = std::min<float>(want, atoi(opt.c_str()));
+    float scale = want / iw;
+    if (ih * scale > kImageMaxH) scale = (float)kImageMaxH / ih;
+    L.block = BL_IMAGE;
+    L.media = path;
+    L.imgScale = scale;
+    L.imgW = std::max(1, (int)(iw * scale));
+    L.imgH = std::max(1, (int)(ih * scale));
+    L.segs.push_back({0, n, 0, KD_MARK});
+    L.x.assign(n + 1, M);
+    L.row.assign(n + 1, 0);
+    L.rows.push_back({0, n, 0, 0, (int16_t)(L.imgH + 10)});
+    L.rowEnd.push_back(M);
+    L.height = L.imgH + 10;
+    return true;
+  }
+
+  // Note embed: show the start of the note (or of the #heading section)
+  std::string heading;
+  size_t hash = target.find('#');
+  if (hash != std::string::npos) {
+    heading = target.substr(hash + 1);
+    target = target.substr(0, hash);
+  }
+  std::string path = target.empty() ? path_ : storage::resolveLink(target, path_);
+  if (path.empty()) return false;
+  const std::string key = path + "#" + heading;
+  auto it = embeds_.find(key);
+  if (it == embeds_.end()) {
+    std::string text;
+    storage::readFile(path, text, 16 * 1024);
+    std::string title = storage::baseName(path) + (heading.empty() ? "" : " > " + heading);
+    std::string body;
+    int lines = 0, level = 0;
+    bool inSection = heading.empty(), front = text.compare(0, 4, "---\n") == 0, more = false;
+    size_t i = 0;
+    for (int ln = 0; i <= text.size(); ln++) {
+      size_t e = text.find('\n', i);
+      if (e == std::string::npos) e = text.size();
+      std::string line = text.substr(i, e - i);
+      i = e + 1;
+      if (front) {
+        if (ln > 0 && line == "---") front = false;
+        continue;
+      }
+      size_t h = 0;
+      while (h < line.size() && line[h] == '#') h++;
+      bool isHeading = h >= 1 && h <= 6 && h < line.size() && line[h] == ' ';
+      if (!heading.empty()) {
+        if (!inSection) {
+          if (isHeading && strcasecmp(line.substr(h + 1).c_str(), heading.c_str()) == 0) inSection = true, level = h;
+          continue;
+        }
+        if (isHeading && (int)h <= level) break;  // next section at the same level
+      }
+      std::string plain = tf::plainLine(line);
+      if (plain.empty()) continue;
+      if (lines == 10) {
+        more = true;
+        break;
+      }
+      if (plain.size() > 300) plain = plain.substr(0, 300) + "...";
+      body += "\n" + plain;
+      lines++;
+    }
+    if (more) body += "\n...";
+    it = embeds_.emplace(key, title + body).first;
+  }
+  L.alt = it->second;
+  L.media = path;
+  L.block = BL_EMBED;
+  size_t nl = L.alt.find('\n');
+  uint32_t titleEnd = nl == std::string::npos ? L.alt.size() : nl;
+  L.segs.push_back({0, titleEnd, (uint16_t)(ST_LINK | ST_BOLD), KD_TEXT});
+  if (titleEnd < L.alt.size()) L.segs.push_back({titleEnd, (uint32_t)L.alt.size(), 0, KD_TEXT});
+  return true;
+}
+
+// Images are decoded straight to the panel after the text (bands) have been drawn
+void EditorScreen::drawImages(int regionY, int regionH) {
+  if (fastScroll_ || popup_) return;
+  const int M = theme::MARGIN;
+  for (auto& L : visible_) {
+    if (L.block != BL_IMAGE) continue;
+    const int y = tops_[L.line] - scroll_ + 5;  // content coordinates
+    if (y + L.imgH <= regionY || y >= regionY + regionH) continue;
+    const int top = std::max(regionY, std::max(0, y)), bot = std::min({regionY + regionH, viewH(), y + L.imgH});
+    if (bot <= top) continue;
+    gfx.setClipRect(0, theme::BAR_H + top, gfx.width(), bot - top);
+    if (!storage::drawImage(gfx, L.media, M, theme::BAR_H + y, L.imgScale))
+      Serial.printf("[editor] couldn't draw %s\n", L.media.c_str());
+    gfx.clearClipRect();
+  }
+  // LovyanGFX keeps its ~45 KB PNG decoder for reuse; we can't spare that much RAM
+  gfx.releasePngMemory();
 }
 
 // ===========================================================================
@@ -663,19 +831,34 @@ void EditorScreen::layoutVisible() {
 }
 
 void EditorScreen::drawLine(LGFX_Sprite& s, const Layout& L, int y0) {
-  const char* p = text_.data() + lines_[L.line].start;
-  const uint32_t n = lineLen(L.line);
+  const bool alt = !L.alt.empty();
+  const char* p = alt ? L.alt.data() : text_.data() + lines_[L.line].start;
+  const uint32_t n = alt ? L.alt.size() : lineLen(L.line);
   const uint32_t ls = lines_[L.line].start;
   const int M = theme::MARGIN, W = gfx.width();
 
-  if (L.block != BL_TEXT && L.block != BL_COMMENT) s.fillRect(M, y0, W - 2 * M, L.height, theme::CODE_BG);
+  if (L.block == BL_IMAGE) {  // placeholder; the picture itself is drawn over it later
+    s.fillRoundRect(M, y0 + 5, L.imgW, L.imgH, 4, theme::BG_ALT);
+    s.setFont(font::small());
+    s.setTextColor(theme::FAINT);
+    s.setTextDatum(textdatum_t::middle_center);
+    s.drawString(tf::toAscii(storage::baseName(L.media + ".md")).c_str(), M + L.imgW / 2, y0 + 5 + L.imgH / 2);
+    s.setTextDatum(textdatum_t::top_left);
+    return;
+  }
+  if (L.block == BL_EMBED) {  // embedded note card
+    s.fillRoundRect(M, y0 + 2, W - 2 * M, L.height - 4, 6, tint(theme::ACCENT, 30));
+    s.fillRect(M, y0 + 2, 3, L.height - 4, theme::ACCENT);
+  } else if (L.block != BL_TEXT && L.block != BL_COMMENT) {
+    s.fillRect(M, y0, W - 2 * M, L.height, theme::CODE_BG);
+  }
   if (L.callout) s.fillRect(M, y0, W - 2 * M, L.height, tint(calloutColor(L.callout), 36));
   if (!L.revealed)
     for (int q = 0; q < L.quote; q++)
       s.fillRect(M + q * kQuoteW, y0, 3, L.height, L.callout ? calloutColor(L.callout) : theme::QUOTE_BAR);
 
   // Selection
-  if (hasSelection()) {
+  if (hasSelection() && !alt) {
     uint32_t sa = std::min(anchor_, cursor_), sb = std::max(anchor_, cursor_);
     if (sa <= ls + n && sb >= ls) {
       uint32_t la = sa > ls ? sa - ls : 0, lb = std::min<uint32_t>(sb - ls, n);
@@ -736,7 +919,7 @@ void EditorScreen::drawLine(LGFX_Sprite& s, const Layout& L, int y0) {
       while (k < sg.b && L.row[k] == r) {
         uint32_t cp;
         int len = tf::decodeUtf8(p, n, k, &cp);
-        if (cp == '\t') {
+        if (cp == '\t' || cp == '\n') {
           k += len;
           break;
         }
@@ -765,7 +948,7 @@ void EditorScreen::drawLine(LGFX_Sprite& s, const Layout& L, int y0) {
   }
 
   // Cursor
-  if (!reading_ && L.line == cursorLine_ && !hasSelection()) {
+  if (!reading_ && L.line == cursorLine_ && !hasSelection() && !alt) {
     uint32_t c = cursor_ - ls;
     const Row& row = L.rows[L.row[c]];
     s.fillRect(L.x[c] - 1, y0 + row.top, 2, row.h - kGap + 2, theme::ACCENT);
@@ -845,6 +1028,7 @@ void EditorScreen::drawRegion(int y, int h) {
       s.fillRoundRect(W - 4, ty, 3, thumb, 1, theme::BORDER);
     }
   });
+  drawImages(y, h);
 }
 
 void EditorScreen::drawContent() {
@@ -926,6 +1110,8 @@ void EditorScreen::draw() {
 bool EditorScreen::open(const std::string& path, int scroll, bool reading) {
   path_ = path;
   reading_ = reading;
+  imgSizes_.clear();
+  embeds_.clear();
   text_ = std::string();  // release the previous note's buffer before allocating the next
   undo_.clear();
   redo_.clear();
@@ -1630,6 +1816,8 @@ void EditorScreen::onTap(int x, int y) {
         return;
       }
     }
+    // Tapping an embedded note's card opens that note
+    if (L.block == BL_EMBED && !L.media.empty()) return reading_ ? app::openNote(L.media) : app::editNote(L.media);
     // Rendered links are followed, as in Obsidian's live preview
     uint32_t pos;
     if (linkAtTap(line, x, ry, &pos)) {
@@ -1676,4 +1864,13 @@ void EditorScreen::readingKey(const Event& e) {
   }
 }
 
-void EditorScreen::onDrag(int dy) { scrollTo(scroll_ - dy); }
+void EditorScreen::onDrag(int dy) {
+  fastScroll_ = true;  // skip image decoding while the finger moves
+  scrollTo(scroll_ - dy);
+}
+
+void EditorScreen::onDragEnd() {
+  if (!fastScroll_) return;
+  fastScroll_ = false;
+  drawContent();
+}

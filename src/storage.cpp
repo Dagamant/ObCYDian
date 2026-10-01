@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #include "board.h"
+#include "clock.h"
 
 namespace storage {
 
@@ -15,6 +16,7 @@ static State st = State::NoCard;
 static std::vector<std::string> index_;
 static std::vector<std::string> folders_;
 static std::vector<std::pair<std::string, std::string>> aliases_;  // (alias, note path)
+static std::vector<std::string> attachments_;                       // image files
 static uint32_t generation_ = 0;
 
 static bool endsWithCI(const std::string& s, const std::string& suffix) {
@@ -26,7 +28,31 @@ static SdSpiConfig spiConfig() {
   return SdSpiConfig(pins::SD_CS, DEDICATED_SPI, SD_SCK_MHZ(20), &sdSpi);
 }
 
+// FAT stores local time; SdFat asks for it whenever a file is created or written
+static void fatDateTime(uint16_t* date, uint16_t* time, uint8_t* ms10) {
+  time_t t = wallclock::now();
+  tm tm_;
+  gmtime_r(&t, &tm_);
+  *date = FS_DATE(tm_.tm_year + 1900, tm_.tm_mon + 1, tm_.tm_mday);
+  *time = FS_TIME(tm_.tm_hour, tm_.tm_min, tm_.tm_sec);
+  *ms10 = tm_.tm_sec & 1 ? 100 : 0;
+}
+
+// FAT local date/time -> UTC seconds
+static uint32_t fatToUtc(uint16_t date, uint16_t time) {
+  if (!date) return 0;
+  tm tm_{};
+  tm_.tm_year = FS_YEAR(date) - 1900;
+  tm_.tm_mon = FS_MONTH(date) - 1;
+  tm_.tm_mday = FS_DAY(date);
+  tm_.tm_hour = FS_HOUR(time);
+  tm_.tm_min = FS_MINUTE(time);
+  tm_.tm_sec = FS_SECOND(time);
+  return (uint32_t)(mktime(&tm_) - wallclock::offsetMinutes() * 60);  // device TZ is UTC
+}
+
 State begin() {
+  FsDateTime::setCallback(fatDateTime);
   static bool spiStarted = false;
   if (!spiStarted) {
     sdSpi.begin(pins::SD_SCK, pins::SD_MISO, pins::SD_MOSI, pins::SD_CS);
@@ -165,6 +191,97 @@ int64_t fileSize(const std::string& path) {
   int64_t n = f.fileSize();
   f.close();
   return n;
+}
+
+static uint32_t entryTime(FsFile& f) {
+  uint16_t d = 0, t = 0;
+  f.getModifyDateTime(&d, &t);
+  return fatToUtc(d, t);
+}
+
+std::vector<FileInfo> listRaw(const std::string& dir, std::vector<std::string>* subdirs) {
+  std::vector<FileInfo> out;
+  if (st != State::Mounted) return out;
+  FsFile d, f;
+  if (!d.open(dir.c_str(), O_RDONLY) || !d.isDir()) return out;
+  char name[256];
+  while (f.openNext(&d, O_RDONLY)) {
+    f.getName(name, sizeof(name));
+    if (strcmp(name, "System Volume Information") != 0) {
+      if (f.isDir()) {
+        if (subdirs) subdirs->push_back(joinPath(dir, name));
+      } else if (!endsWithCI(name, ".tmp")) {
+        out.push_back({joinPath(dir, name), (uint32_t)f.fileSize(), entryTime(f)});
+      }
+    }
+    f.close();
+  }
+  return out;
+}
+
+static void listAllInto(const std::string& dir, std::vector<FileInfo>& out, int depth) {
+  if (depth > 10) return;
+  std::vector<std::string> subdirs;
+  auto files = listRaw(dir, &subdirs);
+  out.insert(out.end(), files.begin(), files.end());
+  for (auto& s : subdirs) listAllInto(s, out, depth + 1);
+}
+
+std::vector<FileInfo> listAll(const std::string& dir) {
+  std::vector<FileInfo> out;
+  listAllInto(dir, out, 0);
+  return out;
+}
+
+bool isDir(const std::string& path) {
+  if (st != State::Mounted) return false;
+  if (path == "/") return true;
+  FsFile f;
+  if (!f.open(path.c_str(), O_RDONLY)) return false;
+  bool d = f.isDir();
+  f.close();
+  return d;
+}
+
+uint32_t modifiedTime(const std::string& path) {
+  if (st != State::Mounted) return 0;
+  FsFile f;
+  if (!f.open(path.c_str(), O_RDONLY)) return 0;
+  uint32_t t = entryTime(f);
+  f.close();
+  return t;
+}
+
+static FsFile writer_;
+static std::string writerPath_;
+
+bool writeBegin(const std::string& path) {
+  writeAbort();
+  if (st != State::Mounted) return false;
+  mkdirs(parentDir(path));
+  writerPath_ = path;
+  return writer_.open((path + ".tmp").c_str(), O_WRONLY | O_CREAT | O_TRUNC);
+}
+
+bool writeChunk(const uint8_t* data, size_t n) { return writer_.isOpen() && writer_.write(data, n) == n; }
+
+bool writeFinish() {
+  if (!writer_.isOpen()) return false;
+  bool ok = writer_.sync();
+  writer_.close();
+  std::string tmp = writerPath_ + ".tmp";
+  if (!ok) {
+    sd.remove(tmp.c_str());
+    return false;
+  }
+  if (sd.exists(writerPath_.c_str()) && !sd.remove(writerPath_.c_str())) return false;
+  return sd.rename(tmp.c_str(), writerPath_.c_str());
+}
+
+void writeAbort() {
+  if (!writer_.isOpen()) return;
+  writer_.close();
+  sd.remove((writerPath_ + ".tmp").c_str());
 }
 
 bool streamFile(const std::string& path, const std::function<bool(const uint8_t*, size_t)>& sink) {
@@ -381,6 +498,8 @@ static void scanDir(const std::string& dir, int depth) {
         subdirs.push_back(joinPath(dir, name));
       } else if (isMarkdown(name)) {
         index_.push_back(joinPath(dir, name));
+      } else if (isImageName(name)) {
+        attachments_.push_back(joinPath(dir, name));
       }
     }
     f.close();
@@ -396,6 +515,7 @@ void rescan() {
   index_.clear();
   folders_.clear();
   aliases_.clear();
+  attachments_.clear();
   generation_++;
   if (st != State::Mounted) return;
   uint32_t t = millis();
@@ -698,6 +818,85 @@ Got the **Cheap Yellow Display** showing notes today.
 
 Related: [[Markdown cheatsheet#Tasks]]
 )MD";
+
+// ---------------------------------------------------------------------------
+// Images
+
+bool isImageName(const std::string& name) {
+  return endsWithCI(name, ".jpg") || endsWithCI(name, ".jpeg") || endsWithCI(name, ".png") || endsWithCI(name, ".bmp");
+}
+
+std::string resolveAttachment(const std::string& name, const std::string& fromPath) {
+  if (name.empty()) return "";
+  if (name.find('/') != std::string::npos) {
+    for (const std::string& cand : {name[0] == '/' ? name : joinPath(parentDir(fromPath), name), "/" + name})
+      if (exists(cand)) return cand;
+    return "";
+  }
+  std::string same = joinPath(parentDir(fromPath), name), best;
+  for (auto& a : attachments_) {
+    if (strcasecmp(a.c_str(), same.c_str()) == 0) return a;
+    if (endsWithCI(a, "/" + name) && (best.empty() || a.size() < best.size())) best = a;
+  }
+  return best;
+}
+
+bool imageSize(const std::string& path, int* w, int* h) {
+  FsFile f;
+  if (st != State::Mounted || !f.open(path.c_str(), O_RDONLY)) return false;
+  uint8_t b[32];
+  bool ok = false;
+  if (f.read(b, 26) == 26) {
+    if (b[0] == 0x89 && b[1] == 'P') {  // PNG: IHDR width/height (big endian)
+      *w = (b[16] << 24) | (b[17] << 16) | (b[18] << 8) | b[19];
+      *h = (b[20] << 24) | (b[21] << 16) | (b[22] << 8) | b[23];
+      ok = true;
+    } else if (b[0] == 'B' && b[1] == 'M') {  // BMP
+      *w = b[18] | (b[19] << 8) | (b[20] << 16) | (b[21] << 24);
+      int32_t hh = b[22] | (b[23] << 8) | (b[24] << 16) | (b[25] << 24);
+      *h = hh < 0 ? -hh : hh;
+      ok = true;
+    } else if (b[0] == 0xFF && b[1] == 0xD8) {  // JPEG: walk the markers to a SOFn
+      uint32_t pos = 2;
+      while (pos + 9 < f.fileSize() && f.seekSet(pos) && f.read(b, 9) == 9 && b[0] == 0xFF) {
+        uint8_t m = b[1];
+        uint16_t len = (b[2] << 8) | b[3];
+        if (m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC) {
+          *h = (b[5] << 8) | b[6];
+          *w = (b[7] << 8) | b[8];
+          ok = true;
+          break;
+        }
+        pos += 2 + len;
+      }
+    }
+  }
+  f.close();
+  return ok && *w > 0 && *h > 0;
+}
+
+namespace {
+// Feeds LovyanGFX's image decoders from a file on the card
+struct CardReader : public lgfx::DataWrapper {
+  FsFile f;
+  int read(uint8_t* buf, uint32_t len) override { return f.read(buf, len); }
+  void skip(int32_t offset) override { f.seekCur(offset); }
+  bool seek(uint32_t offset) override { return f.seekSet(offset); }
+  void close() override { f.close(); }
+  int32_t tell() override { return f.curPosition(); }
+};
+}  // namespace
+
+bool drawImage(LovyanGFX& g, const std::string& path, int x, int y, float scale) {
+  CardReader r;
+  if (st != State::Mounted || !r.f.open(path.c_str(), O_RDONLY)) return false;
+  bool ok;
+  if (endsWithCI(path, ".png")) ok = g.drawPng(&r, x, y, 0, 0, 0, 0, scale, scale);
+  else if (endsWithCI(path, ".bmp")) ok = g.drawBmp(&r, x, y, 0, 0, 0, 0, scale, scale);
+  else ok = g.drawJpg(&r, x, y, 0, 0, 0, 0, scale, scale);
+  r.close();
+  return ok;
+}
 
 void createSampleVault() {
   if (st != State::Mounted) return;

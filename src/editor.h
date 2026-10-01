@@ -5,6 +5,7 @@
 //  - reading: everything rendered, no cursor; taps follow links and toggle checkboxes.
 // Only the lines on screen are ever laid out, so large notes need little memory.
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,7 @@ class EditorScreen : public Screen {
   void draw() override;
   void onTap(int x, int y) override;
   void onDrag(int dy) override;
+  void onDragEnd() override;
   void onKey(const input::Event& e) override;
   void onLeave() override;
   void tick() override;
@@ -51,6 +53,11 @@ class EditorScreen : public Screen {
     bool revealed = false;
     uint8_t block = 0, heading = 0, quote = 0;
     uint8_t callout = 0;  // callout type (0 = plain quote / none)
+    // Embeds: a note card shows `alt` (text taken from the embedded note) instead of the
+    // line itself; an image block shows the picture at `media`.
+    std::string alt, media;
+    int16_t imgW = 0, imgH = 0;
+    float imgScale = 1;
     int16_t height = 0;
     std::vector<Seg> segs;
     std::vector<int16_t> x;   // per byte (and one past the end): glyph x position
@@ -150,6 +157,13 @@ class EditorScreen : public Screen {
   int popupRows_ = 0, popupFirst_ = 0;  // visible window into popupItems_
   void placePopup();
   bool titleDirty_ = false;
+
+  // Image sizes and embed previews (cleared when a note is opened)
+  std::map<std::string, std::pair<int, int>> imgSizes_;
+  std::map<std::string, std::string> embeds_;
+  bool fastScroll_ = false;  // dragging: draw image placeholders only
+  bool embedLine(const char* p, uint32_t n, Layout& L);
+  void drawImages(int regionY, int regionH);
 
   // resolved-link cache
   uint32_t linkGen_ = 0;

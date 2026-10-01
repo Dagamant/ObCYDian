@@ -3,6 +3,8 @@
 
 #include <Print.h>
 
+#include "board.h"
+
 #include <functional>
 #include <string>
 #include <utility>
@@ -42,6 +44,26 @@ bool writeFile(const std::string& path, const std::string& data);
 bool exists(const std::string& path);
 bool mkdirs(const std::string& path);
 int64_t fileSize(const std::string& path);  // -1 if missing
+// Every file under `dir` (recursively, including hidden folders), with size and
+// modification time (UTC seconds; 0 if unknown). Temporary .tmp files are skipped.
+struct FileInfo {
+  std::string path;
+  uint32_t size;
+  uint32_t mtime;
+};
+std::vector<FileInfo> listAll(const std::string& dir = "/");
+// Directory entries of `dir` (all files and folders, including hidden ones)
+std::vector<FileInfo> listRaw(const std::string& dir, std::vector<std::string>* subdirs);
+bool isDir(const std::string& path);
+uint32_t modifiedTime(const std::string& path);  // UTC seconds, 0 if unknown
+
+// Streaming writes for uploads (one at a time). Data goes to a .tmp file that replaces the
+// target on finish(), so an interrupted upload never leaves a partial file.
+bool writeBegin(const std::string& path);
+bool writeChunk(const uint8_t* data, size_t n);
+bool writeFinish();
+void writeAbort();
+
 // Reads a file of any size in chunks; `sink` returns false to stop early.
 bool streamFile(const std::string& path, const std::function<bool(const uint8_t*, size_t)>& sink);
 bool remove(const std::string& path);
@@ -94,6 +116,16 @@ const std::vector<std::pair<std::string, std::string>>& aliases();  // (alias, p
 // Obsidian-style link resolution. `target` is the [[link]] text without alias/heading.
 // Returns "" if no note matches.
 std::string resolveLink(const std::string& target, const std::string& fromPath);
+
+// --- Images (attachments)
+bool isImageName(const std::string& name);  // .jpg/.jpeg/.png/.bmp
+// Obsidian-style lookup of an embedded file: a path (relative to the note or the vault)
+// or a bare file name found anywhere in the vault. "" if missing.
+std::string resolveAttachment(const std::string& name, const std::string& fromPath);
+// Pixel size from the file header (JPEG SOF / PNG IHDR / BMP header).
+bool imageSize(const std::string& path, int* w, int* h);
+// Decodes the image straight from the card onto `g` at (x, y), scaled by `scale`.
+bool drawImage(LovyanGFX& g, const std::string& path, int x, int y, float scale);
 
 void createSampleVault();
 

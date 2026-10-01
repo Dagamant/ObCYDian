@@ -41,8 +41,8 @@ void PowerScreen::draw() {
 void PowerScreen::drawRows() {
   const int W = gfx.width(), M = theme::MARGIN;
   const int vx = 250, vw = W - M - vx;
-  int y = theme::BAR_H + 14;
-  gfx.fillRect(0, y, W, 206, theme::BG);
+  int y = theme::BAR_H + 8;
+  gfx.fillRect(0, y, W, gfx.height() - 58 - y, theme::BG);
 
   auto label = [&](const char* text, const char* sub) {
     gfx.setFont(font::ui());
@@ -50,13 +50,18 @@ void PowerScreen::drawRows() {
     gfx.drawString(text, M + 4, y + 4);
     gfx.setFont(font::small());
     gfx.setTextColor(theme::FAINT);
-    gfx.drawString(sub, M + 4, y + 25);
+    gfx.drawString(sub, M + 4, y + 23);
   };
 
   // Brightness: [-] 60% [+]
+  label("Theme", "Light or dark colours");
+  btnTheme_ = {vx, y, vw, 38};
+  ui::button(btnTheme_, theme::lightTheme() ? "Light" : "Dark", theme::BORDER);
+  y += 48;
+
   label("Brightness", "Lower saves power");
-  btnDim_ = {vx, y, 50, 40};
-  btnBright_ = {vx + vw - 50, y, 50, 40};
+  btnDim_ = {vx, y, 50, 38};
+  btnBright_ = {vx + vw - 50, y, 50, 38};
   ui::button(btnDim_, "-", theme::BORDER);
   ui::button(btnBright_, "+", theme::BORDER);
   char pct[8];
@@ -64,19 +69,19 @@ void PowerScreen::drawRows() {
   gfx.setFont(font::uiBold());
   gfx.setTextColor(theme::TEXT_BRIGHT);
   gfx.setTextDatum(textdatum_t::middle_center);
-  gfx.drawString(pct, vx + vw / 2, y + 20);
+  gfx.drawString(pct, vx + vw / 2, y + 19);
   gfx.setTextDatum(textdatum_t::top_left);
-  y += 56;
+  y += 48;
 
   label("Screen off after", "Keyboard & WiFi keep running");
-  btnScreen_ = {vx, y, vw, 40};
+  btnScreen_ = {vx, y, vw, 38};
   ui::button(btnScreen_, durationText(power::screenTimeout()).c_str(), theme::BORDER);
-  y += 56;
+  y += 48;
 
   label("Sleep after", "Deep sleep: lowest power");
-  btnSleep_ = {vx, y, vw, 40};
+  btnSleep_ = {vx, y, vw, 38};
   ui::button(btnSleep_, durationText(power::sleepTimeout()).c_str(), theme::BORDER);
-  y += 50;
+  y += 44;
 
   gfx.setFont(font::small());
   gfx.setTextColor(theme::MUTED);
@@ -89,12 +94,15 @@ void PowerScreen::drawRows() {
   gfx.setTextColor(theme::TEXT);
   gfx.drawString(bat, M + 4, y);
   gfx.setTextColor(theme::MUTED);
-  gfx.drawString("BOOT button: press = screen on/off, hold 2 s = sleep.", M + 4, y + 16);
-  gfx.drawString("Touch the screen or press BOOT to wake.", M + 4, y + 32);
+  gfx.drawString("BOOT: press = screen on/off, hold 2 s = sleep. Touch or BOOT wakes.", M + 4, y + 16);
 }
 
 void PowerScreen::onTap(int x, int y) {
   if (ui::hitLeft(x, y)) return app::back();
+  if (btnTheme_.contains(x, y)) {
+    theme::setLight(!theme::lightTheme());
+    return app::redraw();
+  }
   if (btnDim_.contains(x, y) || btnBright_.contains(x, y)) {
     int level = power::brightness() + (btnBright_.contains(x, y) ? 25 : -25);
     power::setBrightness(std::max(10, std::min(255, level)));

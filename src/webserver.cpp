@@ -7,6 +7,8 @@
 #include <WiFi.h>
 
 #include "app.h"
+#include <esp32/rom/crc.h>
+
 #include "battery.h"
 #include "clock.h"
 #include "power.h"
@@ -308,6 +310,184 @@ void handleRadio() {
   radio::switchTo(mode);
 }
 
+// --- Graph: notes, links between them and links to notes that don't exist yet
+void handleGraph() {
+  if (!requireCard()) return;
+  const auto& notes = storage::notes();
+  std::vector<std::string> ghosts;
+  std::vector<std::pair<int, int>> links;
+  for (int i = 0; i < (int)notes.size(); i++) {
+    std::string text;
+    if (!storage::readFile(notes[i], text)) continue;
+    for (size_t a = text.find("[["); a != std::string::npos; a = text.find("[[", a + 2)) {
+      size_t b = text.find("]]", a + 2);
+      if (b == std::string::npos) break;
+      size_t end = std::min(text.find_first_of("|#", a + 2), b);
+      std::string target = text.substr(a + 2, end - a - 2);
+      if (target.empty() || target.find('\n') != std::string::npos) continue;
+      std::string path = storage::resolveLink(target, notes[i]);
+      int j = -1;
+      if (!path.empty()) {
+        for (int k = 0; k < (int)notes.size(); k++)
+          if (notes[k] == path) j = k;
+      } else {
+        size_t dot = target.find_last_of('.');
+        if (dot != std::string::npos && target.size() - dot <= 5 && strcasecmp(target.c_str() + dot, ".md") != 0)
+          continue;  // an attachment (image etc.), not a missing note
+        for (int k = 0; k < (int)ghosts.size(); k++)
+          if (strcasecmp(ghosts[k].c_str(), target.c_str()) == 0) j = notes.size() + k;
+        if (j < 0) {
+          ghosts.push_back(target);
+          j = notes.size() + ghosts.size() - 1;
+        }
+      }
+      if (j >= 0 && j != i) {
+        bool dup = false;
+        for (auto& l : links)
+          if ((l.first == i && l.second == j) || (l.first == j && l.second == i)) dup = true;
+        if (!dup) links.push_back({i, j});
+      }
+    }
+  }
+  std::string j = "{\"notes\":[";
+  for (size_t i = 0; i < notes.size(); i++) j += (i ? "," : "") + q(notes[i]);
+  j += "],\"ghosts\":[";
+  for (size_t i = 0; i < ghosts.size(); i++) j += (i ? "," : "") + q(ghosts[i]);
+  j += "],\"links\":[";
+  for (size_t i = 0; i < links.size(); i++)
+    j += (i ? "," : "") + std::string("[") + std::to_string(links[i].first) + "," + std::to_string(links[i].second) + "]";
+  sendJson(200, j + "]}");
+}
+
+// --- Vault backup: an uncompressed .zip streamed straight from the card. Every size is
+// known up front (local headers + data + data descriptors + central directory), so the
+// response has a Content-Length and nothing is buffered; CRCs go in the data descriptors.
+
+void put16(uint8_t* p, uint16_t v) { p[0] = v; p[1] = v >> 8; }
+void put32(uint8_t* p, uint32_t v) { put16(p, v); put16(p + 2, v >> 16); }
+
+void dosTime(uint32_t utc, uint16_t* date, uint16_t* time) {
+  time_t t = utc ? (time_t)utc + wallclock::offsetMinutes() * 60 : wallclock::now();
+  tm tm_;
+  gmtime_r(&t, &tm_);
+  *date = ((tm_.tm_year - 80) << 9) | ((tm_.tm_mon + 1) << 5) | tm_.tm_mday;
+  *time = (tm_.tm_hour << 11) | (tm_.tm_min << 5) | (tm_.tm_sec / 2);
+}
+
+void handleBackup() {
+  if (!requireCard()) return;
+  app::saveCurrent();
+  auto files = storage::listAll("/");
+  struct Entry {
+    std::string name;
+    uint32_t size, crc, offset;
+    uint16_t date, time;
+  };
+  std::vector<Entry> entries;
+  uint32_t total = 0, central = 0;
+  for (auto& f : files) {
+    Entry e{f.path.substr(1), f.size, 0, total, 0, 0};
+    dosTime(f.mtime, &e.date, &e.time);
+    total += 30 + e.name.size() + e.size + 16;
+    central += 46 + e.name.size();
+    entries.push_back(e);
+  }
+  const uint32_t length = total + central + 22;
+  std::string fname = "obcydian-vault-" + wallclock::format("YYYY-MM-DD") + ".zip";
+  server.sendHeader("Content-Disposition", ("attachment; filename=\"" + fname + "\"").c_str());
+  server.sendHeader("Cache-Control", "no-store");
+  server.setContentLength(length);
+  server.send(200, "application/zip", "");
+  WiFiClient client = server.client();
+  uint8_t h[46];
+  for (auto& e : entries) {
+    memset(h, 0, 30);
+    put32(h, 0x04034b50);
+    put16(h + 4, 20);
+    put16(h + 6, 0x0808);  // sizes/CRC in a data descriptor; UTF-8 names
+    put16(h + 10, e.time);
+    put16(h + 12, e.date);
+    put16(h + 26, e.name.size());
+    client.write(h, 30);
+    client.write((const uint8_t*)e.name.data(), e.name.size());
+    uint32_t crc = 0, sent = 0;
+    storage::streamFile("/" + e.name, [&](const uint8_t* d, size_t n) {
+      n = std::min<size_t>(n, e.size - sent);  // never send more than announced
+      crc = crc32_le(crc, d, n);
+      sent += n;
+      return client.write(d, n) == n;
+    });
+    while (sent < e.size) {  // file shrank while streaming: pad so the archive stays well-formed
+      static const uint8_t zeros[64] = {0};
+      size_t n = std::min<size_t>(sizeof(zeros), e.size - sent);
+      crc = crc32_le(crc, zeros, n);
+      client.write(zeros, n);
+      sent += n;
+    }
+    e.crc = crc;
+    put32(h, 0x08074b50);
+    put32(h + 4, crc);
+    put32(h + 8, e.size);
+    put32(h + 12, e.size);
+    client.write(h, 16);
+    power::keepAwake();
+  }
+  for (auto& e : entries) {
+    memset(h, 0, 46);
+    put32(h, 0x02014b50);
+    put16(h + 4, 20);
+    put16(h + 6, 20);
+    put16(h + 8, 0x0808);
+    put16(h + 12, e.time);
+    put16(h + 14, e.date);
+    put32(h + 16, e.crc);
+    put32(h + 20, e.size);
+    put32(h + 24, e.size);
+    put16(h + 28, e.name.size());
+    put32(h + 42, e.offset);
+    client.write(h, 46);
+    client.write((const uint8_t*)e.name.data(), e.name.size());
+  }
+  memset(h, 0, 22);
+  put32(h, 0x06054b50);
+  put16(h + 8, entries.size());
+  put16(h + 10, entries.size());
+  put32(h + 12, central);
+  put32(h + 16, total);
+  client.write(h, 22);
+  Serial.printf("[web] backup: %u files, %u bytes\n", (unsigned)entries.size(), (unsigned)length);
+}
+
+// --- Uploads (multipart, one file per request): streamed to the card
+std::string uploadPath_;
+bool uploadOk_ = false;
+
+void handleUploadChunk() {
+  HTTPUpload& up = server.upload();
+  if (up.status == UPLOAD_FILE_START) {
+    // ?path= gives the full destination (folder uploads keep their structure)
+    uploadPath_ = arg("path");
+    uploadOk_ = safePath(uploadPath_) && uploadPath_.size() > 1 && storage::writeBegin(uploadPath_);
+  } else if (up.status == UPLOAD_FILE_WRITE) {
+    if (uploadOk_ && !storage::writeChunk(up.buf, up.currentSize)) uploadOk_ = false;
+    power::keepAwake();
+  } else if (up.status == UPLOAD_FILE_END) {
+    uploadOk_ = uploadOk_ && storage::writeFinish();
+    if (!uploadOk_) storage::writeAbort();
+  } else if (up.status == UPLOAD_FILE_ABORTED) {
+    storage::writeAbort();
+    uploadOk_ = false;
+  }
+}
+
+void handleUploadDone() {
+  if (!uploadOk_) return sendError(500, "Upload failed");
+  Serial.printf("[web] uploaded %s\n", uploadPath_.c_str());
+  storage::rescan();
+  app::externalChange(uploadPath_);
+  sendJson(200, "{\"path\":" + q(uploadPath_) + "}");
+}
+
 void handleFile() {
   if (!requireCard()) return;
   std::string path = arg("path");
@@ -368,6 +548,9 @@ void startServer() {
   server.on("/api/search", HTTP_GET, handleSearch);
   server.on("/api/radio", HTTP_POST, handleRadio);
   server.on("/api/time", HTTP_POST, handleTime);
+  server.on("/api/backup.zip", HTTP_GET, handleBackup);
+  server.on("/api/graph", HTTP_GET, handleGraph);
+  server.on("/api/upload", HTTP_POST, handleUploadDone, handleUploadChunk);
   server.on("/api/wifi/scan", HTTP_GET, handleScan);
   server.on("/api/wifi", HTTP_POST, handleSetWifi);
   server.onNotFound(handleNotFound);

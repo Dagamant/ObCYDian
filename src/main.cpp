@@ -24,6 +24,7 @@ void setup() {
   Serial.begin(921600);
   pinMode(pins::BOOT_BTN, INPUT_PULLUP);
   power::begin();  // releases pins parked during deep sleep
+  theme::loadTheme();
   for (int p : {pins::LED_R, pins::LED_G, pins::LED_B}) {
     pinMode(p, OUTPUT);
     digitalWrite(p, HIGH);  // off (active low)

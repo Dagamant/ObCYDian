@@ -125,7 +125,7 @@ class PowerScreen : public Screen {
 
  private:
   void drawRows();
-  ui::Rect btnDim_, btnBright_, btnScreen_, btnSleep_, btnOffNow_, btnSleepNow_, btnCalibrate_;
+  ui::Rect btnTheme_, btnDim_, btnBright_, btnScreen_, btnSleep_, btnOffNow_, btnSleepNow_, btnCalibrate_;
 };
 
 // Full-text search across all notes.
