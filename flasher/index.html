@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ObCYDian Web Flasher</title>
+<meta name="description" content="Install ObCYDian, an Obsidian-style markdown notes app, on the 3.5-inch ESP32 Cheap Yellow Display, straight from your browser.">
+<meta property="og:title" content="ObCYDian Web Flasher">
+<meta property="og:description" content="Obsidian-style markdown notes on a 3.5-inch ESP32 touchscreen. Flash it from your browser.">
+<meta property="og:image" content="img/device-live-preview.png">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+<style>
+:root{
+  --bg:#ffffff;--bg-2:#f7f6fb;--card:#ffffff;--border:#e4e1ee;--text:#24212e;--muted:#635e72;--faint:#8f8a9c;
+  --accent:#7c5cf0;--accent-hover:#6a48e6;--accent-soft:#efeaff;--on-accent:#ffffff;
+  --ok:#1f8a5b;--warn-bg:#fff6dd;--warn-border:#efd58a;--warn-text:#6b5410;
+  --code-bg:#f2f0f7;--shadow:0 1px 2px rgba(30,20,60,.06),0 8px 28px rgba(30,20,60,.08);
+  --bezel:#17151c;
+  --improv-primary-color:#7c5cf0;--improv-on-primary-color:#fff;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141317;--bg-2:#1b1a20;--card:#1f1e25;--border:#2f2d38;--text:#e6e3ee;--muted:#a9a4b6;--faint:#7a7587;
+  --accent:#a88bfa;--accent-hover:#b9a0ff;--accent-soft:#2c2640;--on-accent:#17121f;
+  --ok:#4cc38a;--warn-bg:#2d2715;--warn-border:#5a4a1c;--warn-text:#e9d38f;
+  --code-bg:#26242d;--shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+  --bezel:#0b0a0e;
+  --improv-primary-color:#a88bfa;--improv-on-primary-color:#17121f;
+}}
+:root[data-theme="dark"]{
+  --bg:#141317;--bg-2:#1b1a20;--card:#1f1e25;--border:#2f2d38;--text:#e6e3ee;--muted:#a9a4b6;--faint:#7a7587;
+  --accent:#a88bfa;--accent-hover:#b9a0ff;--accent-soft:#2c2640;--on-accent:#17121f;
+  --ok:#4cc38a;--warn-bg:#2d2715;--warn-border:#5a4a1c;--warn-text:#e9d38f;
+  --code-bg:#26242d;--shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+  --bezel:#0b0a0e;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code,pre{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em}
+code{background:var(--code-bg);padding:.12em .4em;border-radius:5px}
+pre{background:var(--code-bg);padding:14px 16px;border-radius:10px;overflow-x:auto;line-height:1.5;margin:10px 0 0}
+pre code{background:none;padding:0}
+img{max-width:100%;height:auto;display:block}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+
+/* Header */
+header{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid var(--border)}
+header .wrap{display:flex;align-items:center;gap:20px;height:60px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;color:var(--text)}
+.brand:hover{text-decoration:none}
+.brand img{width:26px;height:26px}
+nav{display:flex;align-items:center;gap:22px;margin-left:auto;font-size:14.5px}
+nav a{color:var(--muted)}
+nav a:hover{color:var(--text);text-decoration:none}
+.gh{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border:1px solid var(--border);border-radius:8px;color:var(--text)!important}
+.gh svg{width:16px;height:16px;fill:currentColor}
+
+/* Hero */
+.hero{padding:56px 0 64px;background:radial-gradient(900px 420px at 85% 10%,var(--accent-soft),transparent 70%)}
+.hero .wrap{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:56px;align-items:center}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--accent);background:var(--accent-soft);padding:5px 11px;border-radius:999px}
+h1{font-size:clamp(32px,4.6vw,48px);line-height:1.1;letter-spacing:-.025em;margin:16px 0 14px}
+.lead{font-size:18px;color:var(--muted);margin:0 0 28px;max-width:34em}
+
+.flash{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;box-shadow:var(--shadow)}
+.steps{list-style:none;margin:0 0 22px;padding:0;display:grid;gap:12px;counter-reset:s}
+.steps li{display:grid;grid-template-columns:28px 1fr;gap:12px;align-items:start;font-size:15px;counter-increment:s}
+.steps li::before{content:counter(s);width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:13.5px;display:grid;place-items:center}
+.steps b{font-weight:600}
+.steps span{color:var(--muted)}
+.btn{appearance:none;border:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:15px 22px;border-radius:11px;background:var(--accent);color:var(--on-accent);font:600 17px/1 Inter,system-ui,sans-serif;transition:background .15s,transform .05s}
+.btn:hover{background:var(--accent-hover)}
+.btn:active{transform:translateY(1px)}
+.btn svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+esp-web-install-button{display:block}
+.notice{display:block;padding:14px 16px;border-radius:11px;background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn-text);font-size:14.5px;line-height:1.5}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:16px;font-size:13.5px;color:var(--faint)}
+.meta b{color:var(--muted);font-weight:500}
+.compat{margin-top:16px;font-size:13.5px;color:var(--muted);display:flex;gap:8px;align-items:flex-start}
+.compat svg{flex:none;width:16px;height:16px;margin-top:3px;stroke:var(--faint);fill:none;stroke-width:2}
+
+.device{position:relative;padding:18px 22px;border-radius:22px;background:var(--bezel);box-shadow:0 30px 60px -20px rgba(40,20,90,.45),inset 0 0 0 1px rgba(255,255,255,.06)}
+.device img{border-radius:4px;width:100%;aspect-ratio:3/2;image-rendering:auto}
+.device::after{content:"";position:absolute;right:9px;top:50%;width:4px;height:36px;margin-top:-18px;border-radius:2px;background:rgba(255,255,255,.08)}
+.caption{text-align:center;font-size:13.5px;color:var(--faint);margin-top:14px}
+
+/* Sections */
+section{padding:72px 0;border-top:1px solid var(--border)}
+section.alt{background:var(--bg-2)}
+h2{font-size:clamp(26px,3vw,32px);letter-spacing:-.02em;line-height:1.2;margin:0 0 10px}
+.sub{color:var(--muted);margin:0 0 32px;max-width:40em;font-size:17px}
+h3{font-size:17px;margin:0 0 6px;letter-spacing:-.01em}
+.grid{display:grid;gap:18px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px}
+.card p{margin:0;color:var(--muted);font-size:15px}
+.icon{width:38px;height:38px;border-radius:10px;background:var(--accent-soft);display:grid;place-items:center;margin-bottom:14px}
+.icon svg{width:20px;height:20px;stroke:var(--accent);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tag{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;margin-bottom:10px}
+.tag.fresh{background:var(--accent-soft);color:var(--accent)}
+.tag.upd{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.keep{margin-top:18px;font-size:15px;color:var(--muted)}
+
+.shots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+figure{margin:0}
+figure img{border-radius:10px;border:1px solid var(--border);background:#000}
+figcaption{font-size:13.5px;color:var(--muted);margin-top:8px}
+.web{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,1fr);gap:18px;margin-top:18px;align-items:start}
+
+ol.after{margin:0;padding:0;list-style:none;display:grid;gap:14px;counter-reset:a}
+ol.after li{counter-increment:a;display:grid;grid-template-columns:44px 1fr;gap:16px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px}
+ol.after li::before{content:counter(a);font-weight:700;font-size:20px;color:var(--accent);line-height:1.2}
+ol.after p{margin:0;color:var(--muted);font-size:15px}
+
+table{width:100%;border-collapse:collapse;font-size:15px}
+td,th{text-align:left;padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:top}
+th{width:140px;color:var(--muted);font-weight:500}
+tr:last-child td,tr:last-child th{border-bottom:0}
+.table{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+
+details{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:0 18px;margin-bottom:10px}
+summary{cursor:pointer;padding:15px 0;font-weight:600;list-style:none;display:flex;justify-content:space-between;gap:12px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--faint);font-weight:400;font-size:20px;line-height:1}
+details[open] summary::after{content:"−"}
+details>div{padding:0 0 16px;color:var(--muted);font-size:15px}
+details p{margin:0 0 8px}
+
+footer{border-top:1px solid var(--border);padding:32px 0 48px;color:var(--faint);font-size:14px}
+footer .wrap{display:flex;flex-wrap:wrap;gap:8px 24px;justify-content:space-between}
+
+@media (max-width:900px){
+  .hero .wrap{grid-template-columns:1fr;gap:36px}
+  .device-col{max-width:520px}
+  .g3,.shots{grid-template-columns:repeat(2,minmax(0,1fr))}
+  nav a:not(.gh){display:none}
+}
+@media (max-width:600px){
+  .wrap{padding:0 16px}
+  .hero{padding:32px 0 44px}
+  section{padding:52px 0}
+  .g2,.g3,.shots,.web{grid-template-columns:1fr}
+  .device{padding:10px 12px;border-radius:14px}
+  .flash{padding:18px}
+  ol.after li{grid-template-columns:28px 1fr;gap:10px;padding:16px}
+  th{width:100px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="brand" href="#"><img src="favicon.svg" alt="">ObCYDian</a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#screens">Screens</a>
+      <a href="#after">After flashing</a>
+      <a href="#help">Help</a>
+      <a class="gh" href="https://github.com/Dagamant/ObCYDian"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="hero">
+  <div class="wrap">
+    <div>
+      <span class="eyebrow">Web flasher · v{{VERSION}}</span>
+      <h1>Put your notes on a Cheap&nbsp;Yellow&nbsp;Display</h1>
+      <p class="lead">ObCYDian is an Obsidian-style markdown notes app for the 3.5-inch ESP32 touchscreen. Install it from this page over USB. You don't need any tools or drivers beyond your browser.</p>
+
+      <div class="flash" id="flash">
+        <ol class="steps">
+          <li><div><b>Plug the board into this computer</b> <span>with a USB-C data cable.</span></div></li>
+          <li><div><b>Click Install</b> <span>and pick the board's serial port. It's usually called "USB Serial" or "CH340".</span></div></li>
+          <li><div><b>Choose a clean install or an update.</b> <span>Tick "Erase device" for a first install. Leave it unticked to keep your WiFi and touch settings.</span></div></li>
+        </ol>
+        <esp-web-install-button manifest="manifest.json">
+          <button slot="activate" class="btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>Install ObCYDian</button>
+          <span slot="unsupported" class="notice"><b>This browser can't talk to USB devices.</b> Open this page in Chrome, Edge or Opera on a desktop or laptop computer. Firefox, Safari and phones don't support Web Serial. You can also flash manually with <a href="#manual">esptool</a>.</span>
+          <span slot="not-allowed" class="notice"><b>Flashing needs a secure connection.</b> Open this page over <code>https://</code> (or from <code>localhost</code>).</span>
+        </esp-web-install-button>
+        <div class="meta"><span>Version <b>{{VERSION}}</b></span><span>Released <b>{{DATE}}</b></span><span>Size <b>{{SIZE}}</b></span><a href="{{RELEASE_URL}}">Release notes</a></div>
+      </div>
+      <p class="compat"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><span>Made for the LCDWiki <b>3.5" ESP32-32E</b> board (E32R35T / E32N35T). Other CYD models use different pins and won't display correctly.</span></p>
+    </div>
+    <div class="device-col">
+      <div class="device"><img src="img/device-live-preview.png" width="960" height="640" alt="ObCYDian editing a note in live preview on the 480×320 screen"></div>
+      <p class="caption">Live preview editing on the 480×320 screen, shown at 2×</p>
+    </div>
+  </div>
+</div>
+
+<section id="install-types">
+  <div class="wrap">
+    <h2>Clean install or update</h2>
+    <p class="sub">When you click Install, the installer asks whether to erase the device first.</p>
+    <div class="grid g2">
+      <div class="card"><span class="tag fresh">Erase device: ticked</span><h3>Clean install</h3><p>Use this the first time, or if the board ran other firmware. It wipes the whole flash, including saved WiFi networks, the touch calibration and Bluetooth pairings.</p></div>
+      <div class="card"><span class="tag upd">Erase device: unticked</span><h3>Update</h3><p>Use this for a newer version of ObCYDian. Only the app is replaced. Your WiFi network, touch calibration and settings stay as they are.</p></div>
+    </div>
+    <p class="keep">Your notes live on the microSD card, so flashing never touches them in either case.</p>
+  </div>
+</section>
+
+<section id="features" class="alt">
+  <div class="wrap">
+    <h2>A pocket vault that speaks Obsidian</h2>
+    <p class="sub">Notes are plain <code>.md</code> files in folders on a microSD card, so you can copy a vault between the device and Obsidian. Write on the touchscreen, with a Bluetooth keyboard, or from any browser.</p>
+    <div class="grid g3">
+      <div class="card"><div class="icon"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></div><h3>Wikilinks and backlinks</h3><p><code>[[Links]]</code> resolve the way Obsidian does, including aliases and headings. Renaming a note updates every link to it.</p></div>
+      <div class="card"><div class="icon"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></div><h3>Live preview editor</h3><p>Formatting renders as you type, and the markdown shows only on the line you're editing. It handles callouts, tasks, tables and code blocks.</p></div>
+      <div class="card"><div class="icon"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></div><h3>Bluetooth keyboard</h3><p>Pair any BLE keyboard and use Obsidian's shortcuts. There's also an on-screen keyboard with accents and symbols.</p></div>
+      <div class="card"><div class="icon"><svg viewBox="0 0 24 24"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5 5 0 0 1 7 0"/><path d="M2 9a15 15 0 0 1 20 0"/><path d="M12 19.5h.01"/></svg></div><h3>WiFi web app</h3><p>Browse and edit the vault at <code>obcydian.local</code>. It includes a graph view, search, zip backups and uploads.</p></div>
+      <div class="card"><div class="icon"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/></svg></div><h3>Sync with Obsidian</h3><p>A built-in WebDAV server works with the Remotely Save plugin on your computer or phone.</p></div>
+      <div class="card"><div class="icon"><svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg></div><h3>Vault tools</h3><p>Command palette, outline, tags, a task list across the vault, bookmarks, templates and daily notes.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="screens">
+  <div class="wrap">
+    <h2>On the device and in the browser</h2>
+    <p class="sub">Screens from the 480×320 display, and the web app it serves in WiFi mode.</p>
+    <div class="shots">
+      <figure><img src="img/device-reading.png" width="960" height="640" loading="lazy" alt="Reading view"><figcaption>Reading view with frontmatter and links</figcaption></figure>
+      <figure><img src="img/device-link-suggest.png" width="960" height="640" loading="lazy" alt="Link suggestions above the on-screen keyboard"><figcaption>Link suggestions and the on-screen keyboard</figcaption></figure>
+      <figure><img src="img/device-callout-tasks.png" width="960" height="640" loading="lazy" alt="A callout and a task list"><figcaption>Callouts and tap-to-tick tasks</figcaption></figure>
+      <figure><img src="img/device-browser.png" width="960" height="640" loading="lazy" alt="File browser"><figcaption>File browser</figcaption></figure>
+      <figure><img src="img/device-search.png" width="960" height="640" loading="lazy" alt="Full-text search results"><figcaption>Full-text search</figcaption></figure>
+      <figure><img src="img/web-note.png" width="1280" height="760" loading="lazy" alt="Web app showing a note"><figcaption>The web app reading a note</figcaption></figure>
+    </div>
+    <div class="web">
+      <figure><img src="img/web-editor.png" width="1280" height="760" loading="lazy" alt="Web markdown editor with live preview"><figcaption>The web editor, with a toolbar and live preview</figcaption></figure>
+      <figure><img src="img/web-phone.png" width="780" height="1520" loading="lazy" alt="Web app on a phone"><figcaption>On a phone</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="after" class="alt">
+  <div class="wrap">
+    <h2>After flashing</h2>
+    <p class="sub">The board restarts into ObCYDian as soon as the install finishes.</p>
+    <ol class="after">
+      <li><div><h3>Calibrate the touchscreen</h3><p>On first boot, tap the targets as they appear. To redo it later, go to Settings → Display &amp; power, or hold BOOT while pressing RESET.</p></div></li>
+      <li><div><h3>Insert a microSD card</h3><p>Any FAT32 or exFAT card works. To start fresh, Settings can also format the card. If you already have an Obsidian vault, copy its folder contents onto the card.</p></div></li>
+      <li><div><h3>Connect to WiFi</h3><p>With no network saved, the device creates a setup network named <code>ObCYDian-XXXX</code>. The screen shows its password and a QR code to join it. Pick your home network in the page that opens. After that, the vault is at <code>http://obcydian.local/</code>.</p></div></li>
+      <li><div><h3>Pair a keyboard (optional)</h3><p>Tap the battery icon in the top bar and switch to Bluetooth. Then put your keyboard in pairing mode. Bluetooth and WiFi take turns, and the device restarts to switch between them.</p></div></li>
+      <li><div><h3>Sync with Obsidian (optional)</h3><p>In Obsidian, install Remotely Save and choose WebDAV with the address <code>http://&lt;device IP&gt;:8080</code>. Leave the username and password empty. The server has no password, so use it only on a network you trust.</p></div></li>
+    </ol>
+  </div>
+</section>
+
+<section id="hardware">
+  <div class="wrap">
+    <h2>Hardware</h2>
+    <p class="sub">Built for and tested on the LCDWiki 3.5" ESP32-32E. Other boards need the pin map in <a href="https://github.com/Dagamant/ObCYDian/blob/main/src/board.h"><code>src/board.h</code></a> changed and a build from source.</p>
+    <div class="table">
+      <table>
+        <tr><th>Board</th><td>LCDWiki E32R35T (resistive touch) / E32N35T</td></tr>
+        <tr><th>Chip</th><td>ESP32-32E (ESP32-D0WD-V3), 4 MB flash, no PSRAM</td></tr>
+        <tr><th>Display</th><td>3.5" 480×320 ST7796, XPT2046 resistive touch</td></tr>
+        <tr><th>Storage</th><td>microSD slot (FAT32 or exFAT)</td></tr>
+        <tr><th>USB</th><td>USB-C via CH340 USB-serial</td></tr>
+        <tr><th>Battery</th><td>Optional 3.7 V Li-ion / LiPo, with a charge indicator and deep sleep</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="help" class="alt">
+  <div class="wrap">
+    <h2>Troubleshooting</h2>
+    <p class="sub">Most problems come down to the cable, the driver or the port being busy.</p>
+    <details><summary>The board doesn't appear in the port list</summary><div><p>Try another cable. Many USB-C cables only carry power. Try a different USB port as well, and avoid hubs.</p><p>On Windows and older macOS versions you may need the <a href="https://www.wch-ic.com/downloads/CH341SER_EXE.html">CH340 driver</a>. On Linux, add yourself to the <code>dialout</code> group (or <code>uucp</code> on Arch), then log out and back in.</p></div></details>
+    <details><summary>"Failed to initialize" or the connection times out</summary><div><p>Close anything else using the port, such as a serial monitor, the Arduino IDE or PlatformIO, then try again.</p><p>If it still fails, hold the <b>BOOT</b> button, press and release <b>RESET</b>, release BOOT, and click Install again. That forces the chip into download mode.</p></div></details>
+    <details><summary>The screen stays blank or white after flashing</summary><div><p>Press RESET once. If it's still blank, check the board model: ObCYDian targets the 3.5" ESP32-32E, and other CYD variants wire the display differently.</p></div></details>
+    <details><summary>Touch is offset or doesn't respond</summary><div><p>Recalibrate by holding BOOT while pressing RESET. A clean install also erases the old calibration.</p></div></details>
+    <details><summary>The browser says this page can't use USB</summary><div><p>Web Serial only works in Chromium-based desktop browsers: Chrome, Edge, Opera, Brave and Vivaldi. Firefox, Safari and mobile browsers can't flash, so use the manual method below.</p></div></details>
+    <details id="manual"><summary>Flashing manually with esptool</summary><div>
+      <p>Download the images from the <a href="{{RELEASE_URL}}">GitHub release</a> and use <a href="https://docs.espressif.com/projects/esptool/">esptool</a>. For a clean install (this erases saved settings):</p>
+      <pre><code>esptool.py --chip esp32 --baud 921600 write_flash 0x0 ObCYDian-{{TAG}}-full.bin</code></pre>
+      <p style="margin-top:12px">To update an existing install and keep its settings:</p>
+      <pre><code>esptool.py --chip esp32 --baud 921600 write_flash 0x10000 ObCYDian-{{TAG}}-app.bin</code></pre>
+    </div></details>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>ObCYDian is free software under the <a href="https://github.com/Dagamant/ObCYDian/blob/main/LICENSE">GPL-3.0</a>. Not affiliated with Obsidian.</span>
+    <span>Flashing by <a href="https://esphome.github.io/esp-web-tools/">ESP Web Tools</a> · <a href="https://github.com/Dagamant/ObCYDian">Source on GitHub</a></span>
+  </div>
+</footer>
+</body>
+</html>
