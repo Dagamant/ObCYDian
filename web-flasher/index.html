@@ -173,7 +173,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:8px 24px;justify-content:space-betw
 <div class="hero">
   <div class="wrap">
     <div>
-      <span class="eyebrow">Web flasher · v{{VERSION}}</span>
+      <span class="eyebrow">Web flasher · v<span class="fw-version">0.1.0</span></span>
       <h1>Put your notes on a Cheap&nbsp;Yellow&nbsp;Display</h1>
       <p class="lead">ObCYDian is an Obsidian-style markdown notes app for the 3.5-inch ESP32 touchscreen. Install it from this page over USB. You don't need any tools or drivers beyond your browser.</p>
 
@@ -188,7 +188,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:8px 24px;justify-content:space-betw
           <span slot="unsupported" class="notice"><b>This browser can't talk to USB devices.</b> Open this page in Chrome, Edge or Opera on a desktop or laptop computer. Firefox, Safari and phones don't support Web Serial. You can also flash manually with <a href="#manual">esptool</a>.</span>
           <span slot="not-allowed" class="notice"><b>Flashing needs a secure connection.</b> Open this page over <code>https://</code> (or from <code>localhost</code>).</span>
         </esp-web-install-button>
-        <div class="meta"><span>Version <b>{{VERSION}}</b></span><span>Released <b>{{DATE}}</b></span><span>Size <b>{{SIZE}}</b></span><a href="{{RELEASE_URL}}">Release notes</a></div>
+        <div class="meta"><span>Version <b class="fw-version">0.1.0</b></span><span>Built <b class="fw-date">2026-10-05</b></span><span>Size <b class="fw-size">1.7 MB</b></span><a href="https://github.com/Dagamant/ObCYDian/releases/latest">Release notes</a></div>
       </div>
       <p class="compat"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><span>Made for the LCDWiki <b>3.5" ESP32-32E</b> board (E32R35T / E32N35T). Other CYD models use different pins and won't display correctly.</span></p>
     </div>
@@ -286,10 +286,10 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:8px 24px;justify-content:space-betw
     <details><summary>Touch is offset or doesn't respond</summary><div><p>Recalibrate by holding BOOT while pressing RESET. A clean install also erases the old calibration.</p></div></details>
     <details><summary>The browser says this page can't use USB</summary><div><p>Web Serial only works in Chromium-based desktop browsers: Chrome, Edge, Opera, Brave and Vivaldi. Firefox, Safari and mobile browsers can't flash, so use the manual method below.</p></div></details>
     <details id="manual"><summary>Flashing manually with esptool</summary><div>
-      <p>Download the images from the <a href="{{RELEASE_URL}}">GitHub release</a> and use <a href="https://docs.espressif.com/projects/esptool/">esptool</a>. For a clean install (this erases saved settings):</p>
-      <pre><code>esptool.py --chip esp32 --baud 921600 write_flash 0x0 ObCYDian-{{TAG}}-full.bin</code></pre>
+      <p>Download the images from the <a href="https://github.com/Dagamant/ObCYDian/releases/latest">GitHub release</a> and use <a href="https://docs.espressif.com/projects/esptool/">esptool</a>. For a clean install (this erases saved settings):</p>
+      <pre><code>esptool.py --chip esp32 --baud 921600 write_flash 0x0 ObCYDian-v<span class="fw-version">0.1.0</span>-full.bin</code></pre>
       <p style="margin-top:12px">To update an existing install and keep its settings:</p>
-      <pre><code>esptool.py --chip esp32 --baud 921600 write_flash 0x10000 ObCYDian-{{TAG}}-app.bin</code></pre>
+      <pre><code>esptool.py --chip esp32 --baud 921600 write_flash 0x10000 ObCYDian-v<span class="fw-version">0.1.0</span>-app.bin</code></pre>
     </div></details>
   </div>
 </section>

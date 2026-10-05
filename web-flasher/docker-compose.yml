@@ -1,0 +1,9 @@
+services:
+  flasher:
+    image: nginx:alpine
+    container_name: obcydian-flasher
+    ports:
+      - "3008:80"
+    volumes:
+      - ./:/usr/share/nginx/html:ro
+    restart: unless-stopped

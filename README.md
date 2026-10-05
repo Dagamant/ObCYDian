@@ -98,7 +98,7 @@ Any FAT32 or exFAT microSD card works. The app can also format the card for you.
 
 ## Installing a release
 
-The easiest way is the **[web flasher](https://obcydian.dagamant.com)**: plug the board in, open the page in Chrome or Edge, and click Install. It can do a clean install or an update that keeps your settings. The page can also be self-hosted with Docker; see [`flasher/`](flasher/).
+The easiest way is the **[web flasher](https://obcydian.dagamant.com)**: plug the board in, open the page in Chrome or Edge, and click Install. It can do a clean install or an update that keeps your settings. The page can also be self-hosted with Docker; see [`web-flasher/`](web-flasher/).
 
 To flash by hand instead, each [release](https://github.com/Dagamant/ObCYDian/releases) has two images:
 
