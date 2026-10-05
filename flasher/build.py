@@ -21,7 +21,6 @@ import urllib.request
 
 REPO = "Dagamant/ObCYDian"
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
 
 # Layout of the merged image (huge_app.csv partition table)
 PARTS = [
@@ -31,11 +30,6 @@ PARTS = [
     ("firmware.bin", 0x10000, None),
 ]
 
-SCREENSHOTS = [
-    "device-reading.png", "device-live-preview.png", "device-link-suggest.png",
-    "device-callout-tasks.png", "device-browser.png", "device-search.png",
-    "web-editor.png", "web-note.png", "web-phone.png",
-]
 
 
 def get(url):
@@ -110,8 +104,8 @@ def main():
                 .replace("{{SIZE}}", f"{len(image) / 1048576:.1f} MB"))
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
         f.write(page)
-    for name in SCREENSHOTS:
-        shutil.copy(os.path.join(ROOT, "docs", "screenshots", name), os.path.join(out, "img", name))
+    for name in os.listdir(os.path.join(HERE, "img")):
+        shutil.copy(os.path.join(HERE, "img", name), os.path.join(out, "img", name))
     shutil.copy(os.path.join(HERE, "favicon.svg"), os.path.join(out, "favicon.svg"))
     print(f"site for {tag} written to {out}")
 

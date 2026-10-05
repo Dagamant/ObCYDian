@@ -10,8 +10,7 @@
 services:
   flasher:
     build:
-      context: ..
-      dockerfile: flasher/Dockerfile
+      context: .
       args:
         FIRMWARE_VERSION: ${FIRMWARE_VERSION:-latest}
     image: obcydian-flasher
