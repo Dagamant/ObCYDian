@@ -8,7 +8,7 @@ The install page served at <https://obcydian.dagamant.com>. It uses [ESP Web Too
 cd flasher
 docker compose up -d --build                           # latest GitHub release
 FIRMWARE_VERSION=v0.1.0 docker compose up -d --build   # a specific release
-FLASHER_PORT=9000 docker compose up -d --build         # another host port (default 8080)
+FLASHER_PORT=9000 docker compose up -d --build         # another host port (default 3008)
 ```
 
 The `flasher` folder is self-contained: you can copy just this folder to a server. The image build downloads the release's `ObCYDian-*-full.bin` from GitHub. After you publish a new release, run `docker compose up -d --build` again and the page picks it up.
@@ -17,7 +17,7 @@ The `flasher` folder is self-contained: you can copy just this folder to a serve
 
 ```
 obcydian.dagamant.com {
-    reverse_proxy localhost:8080
+    reverse_proxy localhost:3008
 }
 ```
 
